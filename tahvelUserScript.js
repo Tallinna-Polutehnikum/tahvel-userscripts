@@ -20,6 +20,63 @@ console.log = GM_log;
     'use strict';
     console.log("Tahvel Customization script started");
 
+    //#region Entry point to scripts and MutationObserver config
+
+    // Trigger when Angular app changes content
+    observeTargetChange(document.body, () => {
+        // Add average grade column to journal
+        if (window.location.href.indexOf("journal") > -1) {
+            const journalTableRows = document.querySelectorAll('.journalTable tr');
+            if (journalTableRows?.length > 2 && !isAlreadyApplied(journalTableRows[1])) {
+                console.log("In journal, add average grade column")
+                addAverageGradeColumn();
+                addAppliedMarker(journalTableRows[1]);
+            }
+        }
+
+        // Append age to PIN in student list view
+        if (window.location.href.indexOf("students") > -1) {
+            let table = document.querySelector(".md-table");
+            let marker = document.querySelector(".md-table tbody > tr > td:nth-child(1)")
+            if (table && !isAlreadyApplied(marker)) {
+                //observeTargetChange(document.querySelector(".md-table"), appendAgeToPin);
+                console.log("In students, append age to PIN")
+                appendAgeToPin();
+                addAppliedMarker(marker);
+            }
+        }
+    });
+
+    function observeTargetChange(targetNode, callback) {
+        const observer = new MutationObserver((mutationsList, observer) => {
+            for(let mutation of mutationsList) {
+                if(mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                // Pause the observer to avoid userscript changes triggering the observer again
+                observer.disconnect();
+
+                callback();
+
+                // Resume observing
+                observer.observe(targetNode, { childList: true, subtree: true });
+                return;
+                }
+            }
+        });
+        observer.observe(targetNode, { childList: true, subtree: true });
+        return observer;
+    }
+
+    function addAppliedMarker(element) {
+        if (!element) return;
+        element.dataset.userscriptApplied = true;
+    }
+    function isAlreadyApplied(element) {
+        if (!element) return false;
+        return element.dataset.userscriptApplied === "true";
+    }
+    //#endregion
+
+    //#region Average grade column in journal
     const gradePalette = {
         5: '#b3ffb3',  // Light green
         4: '#b3ffb3',  // Light green
@@ -147,27 +204,39 @@ console.log = GM_log;
             totalColumn.style.backgroundColor = color || '#fff';
         });
     }
+    //#endregion
 
-    // Wait for the Angular app to finish loading
-    let journalTableWaitCount = 0;
-    function waitForJournalTable() {
-        // get journal table row count, if less than 2, then wait
-        const journalTableRows = document.querySelectorAll('.journalTable tr');
-        if (journalTableRows?.length > 2) {
-            console.log("In journal, add average grade column")
-            addAverageGradeColumn();
-        } else {
-            // Angular app is not ready, wait and check again
-            setTimeout(waitForJournalTable, 200);
-            journalTableWaitCount++;
-            if (journalTableWaitCount % 10 === 0) {
-                console.log("still waiting for journal table", journalTableWaitCount)
-            }
+    //#region Student list and detail view enhancements
+    function calculateAgeFromPin(pin) {
+        // pin is in format 39210050229 (SYYMMDDNNNC), S is century and sex, 3 is 20th century male, 4 is 20st century female, 5 is 21st century
+        const century = parseInt(pin.substring(0, 1));
+        const year = parseInt(pin.substring(1, 3));
+        const month = parseInt(pin.substring(3, 5));
+        const day = parseInt(pin.substring(5, 7));
+
+        const baseYear = century === 3 || century === 4 ? 1900 : 2000;
+        const birthDate = new Date(baseYear + year, month - 1, day);
+        const ageDifMs = Date.now() - birthDate.getTime();
+        const ageDate = new Date(ageDifMs);
+        return Math.abs(ageDate.getUTCFullYear() - 1970);
+    }
+
+    function appendAgeToPin() {
+        let elements = [];
+
+        // Students list view table
+        let columnHeader = document.querySelector("[md-order-by='person.idcode']");
+        if (columnHeader) {
+            let columnNumber = Array.from(columnHeader.parentElement.children).indexOf(columnHeader);
+            elements = Array.from(columnHeader.parentElement.parentElement.parentElement.querySelectorAll("tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"));
         }
-    }
 
-    // If url contains "journal", add the average grade column
-    if (window.location.href.indexOf("journal") > -1) {
-        waitForJournalTable();
+        elements.forEach(element => {
+            const pin = element.textContent;
+            const age = calculateAgeFromPin(pin);
+            // if age is less than 18 make the span bold
+            element.innerHTML = `${pin} <span style="font-weight: ${age < 18 ? 'bold' : 'normal'}">(${age})</span>`;
+        });
     }
+    //#endregion
 })();
