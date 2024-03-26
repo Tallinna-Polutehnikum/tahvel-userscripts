@@ -45,6 +45,16 @@ console.log = GM_log;
                 addAppliedMarker(marker);
             }
         }
+
+        // Update Rühmajuhendaja aruanne parameters after group selection
+        if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
+            let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="Õpperühm"] input`);
+            if (groupSelect && !isAlreadyApplied(groupSelect)) {
+                console.log("In Rühmajuhendaja aruanne, update parameters after group selection")
+                groupSelect.addEventListener("change", updateRJAParameters);
+                addAppliedMarker(groupSelect);
+            }
+        }
     });
 
     function observeTargetChange(targetNode, callback) {
@@ -239,4 +249,60 @@ console.log = GM_log;
         });
     }
     //#endregion
+
+    //#region Rühmajuhendaja aruanne
+    function updateRJAParameters(event) {
+        let group = event.target.value;
+        //document.querySelector(`[ng-click="toggleShowAllParameters()"]`).click();
+    
+        // get the year number from group and set the date to 1 of august of that year
+        let year = parseInt(group.match(/\d+/)[0]) + 2000
+        let date = new Date(year, 7, 1)
+    
+        // checkboxes in order, 1 for checked, 0 for unchecked
+        let rjaEntryTypes = [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+        // loop to remove checkmarks from disabled checkboxes after they are enabled from the previous run
+        for (let i = 0; i < 4; i++) {
+            document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
+                let inputState = input.getAttribute("aria-checked") === "true" ? 1 : 0
+                if (inputState ^ rjaEntryTypes[index])
+                    input.click()
+            })
+        }
+    
+        let dateInput = document.querySelector(`[ng-model="criteria.from"] input`)
+        dateInput.click();
+        dateInput.value = ""
+        let startDate = date.toLocaleDateString('et', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        simulateTyping(dateInput, startDate, 10, 10);
+        
+    
+        document.querySelector(`[aria-label="{{'report.studentGroupTeacher.studyYear' | translate}}"] md-option`).click()
+        setTimeout(() => {
+            document.querySelector(`[aria-label="{{'report.studentGroupTeacher.studyYear' | translate}}"] md-option`).click()
+        }, 50)
+    }
+    //#endregion
 })();
+
+function simulateTyping(inputElement, text, latency, interResponseTime) {
+    let currentIndex = 0;
+    const textLength = text.length;
+
+    function insertCharacter(char) {
+        inputElement.value += char;
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function typeCharacter() {
+        insertCharacter(text[currentIndex]);
+        if (currentIndex < textLength - 1) {
+            currentIndex++;
+            setTimeout(typeCharacter, interResponseTime);
+        }
+    }
+
+    setTimeout(() => {
+        typeCharacter();
+    }, latency);
+}
