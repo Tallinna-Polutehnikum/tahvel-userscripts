@@ -22,17 +22,56 @@ console.log = GM_log;
     'use strict';
     console.log("Tahvel Customization script started");
 
+    //#region Angular hooking WIP
+    /*setTimeout(() => {
+
+    // Hook into AngularJS to get notified when the app changes content
+    const angular = unsafeWindow.angular;
+    if (!angular) return;
+
+    let $injector = angular.element(document.getElementsByTagName("body")).injector()
+    console.log("injector", $injector)
+    let Menu = $injector.get("Menu")
+    console.log("Menu", Menu)
+    
+    } , 5000)*/
+
+    // Inject CSS
+    const style = document.createElement('style');
+    style.textContent = `
+    /* Hinnete dropdown oleks pikem*/
+    md-select-menu, md-select-menu md-content {
+            max-height: 300px;
+        }
+    `;
+    document.head.appendChild(style);
+
     //#region Entry point to scripts and MutationObserver config
 
     // Trigger when Angular app changes content
     observeTargetChange(document.body, () => {
-        // Add average grade column to journal
+        // Add average grade column and entry tooltips to journal
         if (window.location.href.indexOf("journal") > -1) {
             const journalTableRows = document.querySelectorAll('.journalTable tr');
             if (journalTableRows?.length > 2 && !isAlreadyApplied(journalTableRows[1])) {
                 console.log("In journal, add average grade column")
                 addAverageGradeColumn();
+                journalEntryTooltips();
                 addAppliedMarker(journalTableRows[1]);
+            }
+
+            // Journal edit popup
+            // Add listener to homework description input and entryType
+            let homeworkDesc = document.querySelector("[ng-model='journalEntry.homework']");
+            if (homeworkDesc && !isAlreadyApplied(homeworkDesc)) {
+                console.log("In journal edit, add homework description listener")
+                journalEntryNotifyStudent(homeworkDesc);
+            }
+            // Add batch absent button
+            let batchGrade = document.querySelector("md-dialog-content table tbody tr i");
+            if (batchGrade && batchGrade.textContent.includes("Hinde korraga") && !isAlreadyApplied(batchGrade)) {
+                journalEntryBatchAbsent(batchGrade);
+                addAppliedMarker(batchGrade);
             }
         }
 
@@ -221,62 +260,128 @@ console.log = GM_log;
     //#endregion
 
     //#region Päevikus hiirega kuupäeva peale liikumine näitab tunni kirjeldust
-    let journalEntries = {};
-    let journalId = window.location.href.match(/journal\/(\d+)/)[1];
+    function journalEntryTooltips() {
+        let journalId = window.location.href.match(/journal\/(\d+)/)[1];
+        if (!journalId) {
+            return;
+        }
+        let entryDOMs = document.querySelectorAll(`[ng-click="editJournalEntry(journalEntry.id)"]`);
+        if (entryDOMs.length === 0) {
+            return;
+        }
 
-    // TODO cached fetch to avoid multiple requests during re-renders
-    fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
-        "headers": {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "en-US,en;q=0.9",
-            "sec-ch-ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"122\"",
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": "\"Windows\"",
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "x-requested-with": "XMLHttpRequest"
-        },
-        "referrer": "https://tahvel.edu.ee/",
-        "referrerPolicy": "strict-origin-when-cross-origin",
-        "body": null,
-        "method": "GET",
-        "mode": "cors",
-        "credentials": "include"
-    }).then(r => r.json()).then(entries => {
-        entries.content.forEach((entry) => {
-            journalEntries[entry.id] = entry;
-        });
-
-        document.querySelectorAll(`[ng-click="editJournalEntry(journalEntry.id)"]`).forEach((el) => {
-            if (el.textContent.trim().includes(".")) {
-                // TODO try to get entry id from the element, or access them by index
-                const entryId = 123456;
-                let journalEntry = journalEntries[entryId]
-                el.addEventListener('mouseover', (event) => {
-                    let clone = cloneForTooltip(journalEntry.parentElement.querySelector('td:nth-child(5)'), event);
-                    let clone2 = cloneForTooltip(journalEntry.parentElement.querySelector('td:nth-child(6)'), event);
-                    el.addEventListener('mouseout', () => {
-                        document.body.removeChild(clone);
-                        document.body.removeChild(clone2);
-                    });
+        // TODO cached fetch to avoid multiple requests during re-renders
+        fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
+            "headers": {
+                "accept": "application/json, text/plain, */*",
+                "accept-language": "en-US,en;q=0.9",
+                "sec-ch-ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"122\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+                "x-requested-with": "XMLHttpRequest"
+            },
+            "referrer": "https://tahvel.edu.ee/",
+            "referrerPolicy": "strict-origin-when-cross-origin",
+            "body": null,
+            "method": "GET",
+            "mode": "cors",
+            "credentials": "include"
+        }).then(r => r.json()).then(entries => {
+            if (entries.content[entries.content.length - 1].entryType === "SISSEKANNE_L") {
+                entries.content.unshift(entries.content.pop());
+            }
+            entries.content.forEach((entry, index) => {
+                let el = entryDOMs[entryDOMs.length - 1 - index];
+                let tooltipContent = `<b>${entry.nameEt}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
+                if (entry.homework) {
+                    let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString('et') : "";
+                    tooltipContent += `<br><br><b>Kodutöö ${duedate}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
+                }
+                let tooltip = createTooltip(el, tooltipContent);
+                el.addEventListener('mousemove', (event) => {
+                    tooltip.style.display = 'block';
+                    tooltip.style.top = event.clientY + 20 + window.scrollY + 'px';
+                    tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + 'px';
                 });
+                el.addEventListener('mouseout', () => {
+                    if (tooltip.style.display === 'block')
+                        tooltip.style.display = 'none';
+                });
+
+            });
+        }).catch(e => console.log(e));
+
+        function createTooltip(element, content) {
+            let clone;
+            if (content === undefined) {
+                clone = element.cloneNode(true);
+            } else {
+                clone = document.createElement('div');
+                clone.innerHTML = content;
+            }
+            clone.style.display = 'none';
+            clone.style.position = 'absolute';
+            clone.style.zIndex = 1000;
+            clone.style.backgroundColor = 'white';
+            clone.style.padding = '5px';
+            clone.style.maxWidth = '500px';
+            clone.style.pointerEvents = 'none';
+            document.body.appendChild(clone);
+            return clone;
+        }
+    }
+    //#endregion
+
+    //#region Päeviku kandes õpilase teavitamine kodutööst
+    function journalEntryNotifyStudent(homeworkDesc) {
+        let isTestCheckbox = document.querySelector("[ng-model='journalEntry.isTest']");
+        homeworkDesc.addEventListener("input", () => {
+            if (isTestCheckbox.getAttribute("aria-checked") === (homeworkDesc.value.trim().length > 0 ? "false" : "true")) {
+                isTestCheckbox.click();
             }
         });
-    }).catch(e => console.log(e));
+        addAppliedMarker(homeworkDesc);
 
-    function cloneForTooltip(element, event) {
-        let clone = element.cloneNode(true);
-        clone.style.display = 'block';
-        clone.style.position = 'absolute';
-        clone.style.zIndex = 1000;
-        clone.style.top = event.clientY + 20 + 'px';
-        clone.style.left = event.clientX - element.getBoundingClientRect().width / 2 + 'px';
-        clone.style.backgroundColor = 'white';
-        clone.style.padding = '5px';
-        clone.style.maxWidth = '500px';
-        document.body.appendChild(clone);
-        return clone;
+        let entryTypeOptions = document.querySelectorAll(`[value^="SISSEKANNE_"]`);
+        entryTypeOptions.forEach(option => {
+            option.addEventListener("click", () => {
+                let hasHomeworkDescription = homeworkDesc.value.trim().length > 0;
+                if (isTestCheckbox.getAttribute("aria-checked") === ((option.value === "SISSEKANNE_H" || hasHomeworkDescription) ? "false" : "true")) {
+                    isTestCheckbox.click();
+                }
+            });
+        });
+    }
+    //#endregion
+
+    //#region Päeviku kandes puudumiste korraga märkimine
+    function journalEntryBatchAbsent(siblingContainer) {
+        let batchAbsent = document.createElement("a");
+        batchAbsent.href = "#";
+        batchAbsent.textContent = "Märgi kõik puudujaks";
+        batchAbsent.style.color = "blue";
+        batchAbsent.style.cursor = "pointer";
+
+        batchAbsent.addEventListener("click", (event) => {
+            event.preventDefault();
+            let absentCheckboxes = [...document.querySelectorAll(`[ng-model="journalEntryStudents[row.id].withoutReason"]`)];
+            let allChecked = absentCheckboxes.every(checkbox => checkbox.getAttribute("aria-checked") === "true");
+            absentCheckboxes.forEach(checkbox => {
+                if (checkbox.getAttribute("aria-checked") === (allChecked ? "true" : "false")) {
+                    checkbox.click();
+                }
+            });
+            // Update the button text just for the clarity. But query DOM again, because some checkboxes get removed when students are excused
+            absentCheckboxes = [...document.querySelectorAll(`[ng-model="journalEntryStudents[row.id].withoutReason"]`)];
+            allChecked = absentCheckboxes.every(checkbox => checkbox.getAttribute("aria-checked") === "true");
+            batchAbsent.textContent = allChecked ? "Märgi kõik kohalolijaks" : "Märgi kõik puudujaks";
+        });
+
+        siblingContainer.parentElement.appendChild(document.createElement("br"));
+        siblingContainer.parentElement.appendChild(batchAbsent);
     }
     //#endregion
 
@@ -369,4 +474,15 @@ function simulateTyping(inputElement, text, latency, interResponseTime) {
     setTimeout(() => {
         typeCharacter();
     }, latency);
+}
+
+function hook(scope, original, after) {
+    return function () {
+        original.apply(scope, arguments)
+        try {
+            after.apply(scope, arguments)
+        } catch (e) {
+            console.error(e)
+        }
+    }
 }
