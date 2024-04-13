@@ -329,7 +329,7 @@ function getAllGroupDurations(groups) {
 }
 
 function simulateTyping(inputElement, text, latency, interResponseTime) {
-    inputElement.value += text;
+    inputElement.value = text;
     inputElement.dispatchEvent(new Event('input', { bubbles: true }));
 }
 

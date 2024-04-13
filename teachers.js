@@ -488,7 +488,7 @@ const groupDuration = {
 /**
  * Ma ei tea veel kas teha hardcoded eesliidese järgi pikkused või teha gruppide päringu ajal arvutus ja cacheda see localstorage-sse.
  * https://tahvel.edu.ee/hois_back/autocomplete/studentgroups?lang=ET
- */ 
+ */
 function getAllGroupDurations(groups) {
     let durations = {};
     groups.forEach(data => {
@@ -506,25 +506,8 @@ function getAllGroupDurations(groups) {
 }
 
 function simulateTyping(inputElement, text, latency, interResponseTime) {
-    let currentIndex = 0;
-    const textLength = text.length;
-
-    function insertCharacter(char) {
-        inputElement.value += char;
-        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    function typeCharacter() {
-        insertCharacter(text[currentIndex]);
-        if (currentIndex < textLength - 1) {
-            currentIndex++;
-            setTimeout(typeCharacter, interResponseTime);
-        }
-    }
-
-    setTimeout(() => {
-        typeCharacter();
-    }, latency);
+    inputElement.value = text;
+    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function hook(scope, original, after) {
