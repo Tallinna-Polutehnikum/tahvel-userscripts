@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
+// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
 // @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
 // @grant GM_log
 // ==/UserScript==
@@ -188,7 +189,7 @@ console.log = GM_log;
     // Function to add the narrow column
     function addAverageGradeColumn() {
         // Find the table header cells containing the word "Hindamine" or "Tund"
-        const tableHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Tund"], .journalTable th > div[aria-label*="Hindamine"]');
+        const tableHeaders = document.querySelectorAll('.journalTable th > div:not([aria-label*="Perioodi hinne"]):not([aria-label*="Lõpptulemus"])');
         // Or use your own name to get all the columns that can contain grades
         // const tableHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Timo Triisa"]');
 
