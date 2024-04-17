@@ -9,6 +9,18 @@
 // @grant GM_log
 // ==/UserScript==
 
+/**
+ * Kuidas seda skripti lugeda/täiendada:
+ *  - Voldi IDE-s kõik regionid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
+ *  - Kood algab mutation observeriga, iga kord kui leht muutub käivitatakse skript uuesti vastavalt aadressile ja sisule.
+ *    See osa asub `#region Entry point to scripts and MutationObserver config` -> fn `observeTargetChange`
+ *    Olen pannud skiptidele "kood on käivitatud" markerid atribuutidena HTMLis, et vältida mitmekordset rakendamist.
+ *  - Sealt edasi saad `Ctrl+Mouse Left Button` funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonid ja nende kirjeldused
+ *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
+ *  - Kõige põhjas on re-usable asjad
+ */ 
+
+
 // Features:
 // - Päevikus näeb õpilase keskmist hinnet
 // - Päevikus näitab aktiivset rida paksema piirjoonega
@@ -86,6 +98,17 @@ console.log = GM_log;
                 appendAgeToPin();
                 addAppliedMarker(marker);
             }
+        }
+
+        // Sooritamise järjekorras aruande filtrid + neg. hinnete arv
+        let studentId = window.location.href.match(/students\/(\d+)/)?.[1];
+        if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Sooritamise järjekorras']`)) {
+            let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
+            if (table && !isAlreadyApplied(table)) {
+                filterForInOrderOfPassing(table, studentId);
+                addAppliedMarker(table);
+            }
+
         }
 
         // Update Rühmajuhendaja aruanne parameters after group selection
@@ -417,6 +440,114 @@ console.log = GM_log;
             // if age is less than 18 make the span bold
             element.innerHTML = `${pin} <span style="font-weight: ${age < 18 ? 'bold' : 'normal'}">(${age})</span>`;
         });
+    }
+    //#endregion
+
+    //#region Sooritamise järjekorras aruande filtrid + neg. hinnete arv
+    function filterForInOrderOfPassing(table, studentId) {
+        const tableHeaders = table.querySelectorAll("thead th");
+        const tableRows = table.querySelectorAll("tbody tr");
+
+        // Count negative final grades
+        let negativeGrades = 0;
+        tableRows.forEach(row => {
+            let type = row.querySelector("td:nth-child(2)").textContent.trim();
+            let grade = row.querySelector("td:nth-child(3)").textContent.trim();
+            if (["MA", "X", "1", "2"].includes(grade) && type === "Lõpptulemus") {
+                negativeGrades++;
+            }
+        });
+        let negativeGradesCounter = document.createElement("span");
+        negativeGradesCounter.textContent = `Negatiivseid lõpptulemusi: ${negativeGrades}`;
+
+
+        // Add filter activation buttons before the table
+        let onlyNegativeGradesToggle = document.createElement("button");
+        onlyNegativeGradesToggle.textContent = "Näita neg. hindeid";
+        onlyNegativeGradesToggle.classList.add("md-button", "md-raised");
+        onlyNegativeGradesToggle.style.marginRight = "10px";
+        onlyNegativeGradesToggle.dataset.active = "false";
+        onlyNegativeGradesToggle.addEventListener("click", () => {
+            let active = onlyNegativeGradesToggle.dataset.active === "true";
+            onlyNegativeGradesToggle.dataset.active = !active;
+            onlyNegativeGradesToggle.textContent = active ? "Näita neg. hindeid" : "Näita kõiki hindeid";
+            if (active) {
+                tableRows.forEach(row => {
+                    row.style.display = "";
+                });
+            } else {
+                tableRows.forEach(row => {
+                    let type = row.querySelector("td:nth-child(2)").textContent.trim();
+                    let grade = row.querySelector("td:nth-child(3)").textContent.trim();
+                    if (!(["MA", "X", "1", "2"].includes(grade)) || type !== "Lõpptulemus") {
+                        row.style.display = "none";
+                    }
+                });
+            }
+        });
+
+        // Hide unnecessary columns
+        let hideColumns = [1, 3];
+        let hideColumnsToggle = document.createElement("button");
+        hideColumnsToggle.textContent = "Peida mittevajalikud veerud";
+        hideColumnsToggle.classList.add("md-button", "md-raised");
+        hideColumnsToggle.style.marginRight = "10px";
+        hideColumnsToggle.dataset.active = "false";
+        hideColumnsToggle.addEventListener("click", () => {
+            let active = hideColumnsToggle.dataset.active === "true";
+            hideColumnsToggle.dataset.active = !active;
+            hideColumnsToggle.textContent = active ? "Peida mittevajalikud veerud" : "Näita kõiki veerge";
+            if (active) {
+                tableRows.forEach(row => {
+                    hideColumns.forEach(index => {
+                        row.children[index].style.display = "";
+                        tableHeaders[index].style.display = "";
+                    });
+                });
+            } else {
+                tableRows.forEach(row => {
+                    hideColumns.forEach(index => {
+                        row.children[index].style.display = "none";
+                        tableHeaders[index].style.display = "none";
+                    });
+                });
+            }
+        });
+
+        // Show journal links in the table
+        let journalLinkToggle = document.createElement("button");
+        journalLinkToggle.textContent = "Lisa päeviku lingid";
+        journalLinkToggle.classList.add("md-button", "md-raised");
+        journalLinkToggle.style.marginRight = "10px";
+        journalLinkToggle.addEventListener("click", () => {
+            fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+                headers: {
+                    "accept": "application/json",
+                }
+            })
+                .then(r => r.json())
+                .then(data => {
+                    tableRows.forEach(row => {
+                        let subject = row.querySelector("td:nth-child(1)").textContent.trim().toLowerCase();
+                        data.forEach(journal => {
+                            if (journal.type === "journal" && subject.startsWith(journal.nameEt.toLowerCase())) {
+                                let journalLink = document.createElement("button");
+                                journalLink.addEventListener("click", () => {
+                                    window.open(`#/journal/${journal.entityId}/edit`, '_blank');
+                                });
+                                journalLink.textContent = "Päevik";
+                                row.querySelector("td:nth-child(1)").appendChild(journalLink);
+                            }
+                        });
+                    });
+                    journalLinkToggle.disabled = true;
+                });
+        });
+
+        table.parentElement.insertBefore(onlyNegativeGradesToggle, table);
+        table.parentElement.insertBefore(hideColumnsToggle, table);
+        table.parentElement.insertBefore(journalLinkToggle, table);
+        table.parentElement.insertBefore(negativeGradesCounter, table);
     }
     //#endregion
 
