@@ -64,6 +64,14 @@ console.log = GM_log;
 
     // Trigger when Angular app changes content
     observeTargetChange(document.body, () => {
+        // Update page title based on the last breadcrumb
+        // If possible add ID from the URL to differentiate between multiple tabs
+        let firstPath = window.location.href.match(/#\/([^\?\/]*)/)?.[1];
+        let id = window.location.href.match(/\/(\d+)\//)?.[1] ?? "";
+        id = id.length > 0 ? ` #${id}` : "";
+        let lastBreadcrumb = document.querySelector("#breadcrumb-wrapper > span:last-child")?.textContent.trim() || firstPath || "Tahvel";
+        document.title = lastBreadcrumb + id;
+
         // Add average grade column and entry tooltips to journal
         if (window.location.href.indexOf("journal") > -1) {
             const journalTableRows = document.querySelectorAll('.journalTable tr');
