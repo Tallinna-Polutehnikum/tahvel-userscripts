@@ -12,18 +12,19 @@
 
 /**
  * Kuidas seda skripti lugeda/täiendada:
- *  - Voldi IDE-s kõik regionid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
+ *  - Voldi IDE-s kõik kommentaari regioonid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
  *  - Kood algab mutation observeriga, iga kord kui leht muutub käivitatakse skript uuesti vastavalt aadressile ja sisule.
  *    See osa asub `#region Entry point to scripts and MutationObserver config` -> fn `observeTargetChange`
  *    Olen pannud skiptidele "kood on käivitatud" markerid atribuutidena HTMLis, et vältida mitmekordset rakendamist.
  *  - Sealt edasi saad `Ctrl+Mouse Left Button` funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonid ja nende kirjeldused
  *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
- *  - Kõige põhjas on re-usable asjad
+ *  - Kõige põhjas (faili lõpus) on re-usable asjad
  */ 
 
 
 // Features:
 // - Päevikus näeb õpilase keskmist hinnet
+// - TODO Keskmise hinde arvutus peaks resettima poolaasta hinde järel
 // - Päevikus näitab aktiivset rida paksema piirjoonega
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
