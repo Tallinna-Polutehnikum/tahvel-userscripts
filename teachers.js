@@ -19,7 +19,7 @@
  *  - Sealt edasi saad `Ctrl+Mouse Left Button` funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonid ja nende kirjeldused
  *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
  *  - Kõige põhjas (faili lõpus) on re-usable asjad
- */ 
+ */
 
 
 // Features:
@@ -48,7 +48,7 @@ console.log = GM_log;
     console.log("injector", $injector)
     let Menu = $injector.get("Menu")
     console.log("Menu", Menu)
-    
+
     } , 5000)*/
 
     // Inject CSS
@@ -123,11 +123,20 @@ console.log = GM_log;
 
         // Update Rühmajuhendaja aruanne parameters after group selection
         if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
-            let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="Õpperühm"] input, md-select[ng-model="formState.studentGroup"]`);
+            let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="Õpperühm"] input`);
             if (groupSelect && !isAlreadyApplied(groupSelect)) {
                 console.log("In Rühmajuhendaja aruanne, update parameters after group selection")
                 groupSelect.addEventListener("change", updateRJAParameters);
                 addAppliedMarker(groupSelect);
+            }
+            // Teachers have different UI for group selection
+            let groupSelectOptions = [...document.querySelectorAll(`md-option[ng-value="studentGroup"]`)];
+            if (groupSelectOptions.length && !isAlreadyApplied(groupSelectOptions[0])) {
+                console.log("In Rühmajuhendaja aruanne, update parameters after group selection")
+                groupSelectOptions.forEach(option => {
+                    option.addEventListener("click", updateRJAParameters);
+                });
+                addAppliedMarker(groupSelectOptions[0]);
             }
         }
     });
@@ -564,6 +573,8 @@ console.log = GM_log;
     //#region Rühmajuhendaja aruanne
     function updateRJAParameters(event) {
         let group = event.target.value;
+        if (typeof group === "object" && group.nameEt)
+            group = group.nameEt
         //document.querySelector(`[ng-click="toggleShowAllParameters()"]`).click();
 
         // get the year number from group and set the date to 1 of august of that year
