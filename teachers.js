@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -303,18 +303,24 @@ console.log = GM_log;
     //#endregion
 
     //#region Päevikus hiirega kuupäeva peale liikumine näitab tunni kirjeldust
-    function journalEntryTooltips() {
+    async function journalEntryTooltips() {
         let journalId = window.location.href.match(/journal\/(\d+)/)[1];
         if (!journalId) {
             return;
         }
-        let entryDOMs = document.querySelectorAll(`[ng-click="editJournalEntry(journalEntry.id)"]`);
+        let entryDOMs = document.querySelectorAll(`[ng-if^="journalEntry.entryType.code"]`);
         if (entryDOMs.length === 0) {
             return;
         }
 
+        let tableBody = entryDOMs[0];
+        while (tableBody.tagName !== "TABLE") {
+            tableBody = tableBody.parentElement;
+        }
+        tableBody = tableBody?.querySelector("tbody");
+
         // TODO cached fetch to avoid multiple requests during re-renders
-        fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
+        let response1 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
             "headers": {
                 "accept": "application/json, text/plain, */*",
                 "accept-language": "en-US,en;q=0.9",
@@ -332,18 +338,38 @@ console.log = GM_log;
             "method": "GET",
             "mode": "cors",
             "credentials": "include"
+        });
+        let dataEntries = await response1.json();
+        fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.5",
+                "X-Requested-With": "XMLHttpRequest",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+                "Pragma": "no-cache",
+                "Cache-Control": "no-cache"
+            },
+            "referrer": "https://tahvel.edu.ee/",
+            "method": "GET",
+            "mode": "cors",
+            "credentials": "include"
         }).then(r => r.json()).then(entries => {
-            if (entries.content[entries.content.length - 1].entryType === "SISSEKANNE_L") {
-                entries.content.unshift(entries.content.pop());
-            }
-            entries.content.forEach((entry, index) => {
-                let el = entryDOMs[entryDOMs.length - 1 - index];
-                let tooltipContent = `<b>${entry.nameEt}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
+            entries.forEach((dateEntry, index) => {
+                let entry = dataEntries.content.find(dataEntry => dataEntry.id === dateEntry.id);
+                let el = entryDOMs[index];
+                let entryType = SissekandedEnum[entry.entryType];
+                if (entry.nameEt !== entryType)
+                    entryType += ": " + entry.nameEt;
+                let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
                 if (entry.homework) {
                     let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString('et') : "";
                     tooltipContent += `<br><br><b>Kodutöö ${duedate}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
                 }
                 let tooltip = createTooltip(el, tooltipContent);
+
                 el.addEventListener('mousemove', (event) => {
                     tooltip.style.display = 'block';
                     tooltip.style.top = event.clientY + 20 + window.scrollY + 'px';
@@ -354,6 +380,28 @@ console.log = GM_log;
                         tooltip.style.display = 'none';
                 });
 
+                // find the index of the first th
+                let closestTH = el.parentElement;
+                while (closestTH && closestTH.tagName !== "TH") {
+                    closestTH = closestTH.parentElement;
+                }
+                // Get the index of the element in the row
+                let columnIndex = Array.from(closestTH.parentElement.children).indexOf(closestTH);
+                // Go through all rows and get the element at the same index
+                for (let i = 0; i < tableBody.children.length; i++) {
+                    let el = tableBody.children[i].children[columnIndex].querySelector("div.layout-row > div");
+                    if (!el) continue;
+
+                    el.addEventListener('mousemove', (event) => {
+                        tooltip.style.display = 'block';
+                        tooltip.style.top = event.clientY + 46 + window.scrollY + 'px';
+                        tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + 'px';
+                    });
+                    el.addEventListener('mouseout', () => {
+                        if (tooltip.style.display === 'block')
+                            tooltip.style.display = 'none';
+                    });
+                }
             });
         }).catch(e => console.log(e));
 
@@ -672,3 +720,19 @@ function hook(scope, original, after) {
         }
     }
 }
+
+const SissekandedEnum = {
+    "SISSEKANNE_EX": "Eksam",
+    "SISSEKANNE_E": "E-õpe",
+    "SISSEKANNE_H": "Hindamine",
+    "SISSEKANNE_HO": "Hoolsus",
+    "SISSEKANNE_I": "Iseseisev töö",
+    "SISSEKANNE_C": "Kontrolltöö",
+    "SISSEKANNE_KU": "Kursuse hinne",
+    "SISSEKANNE_K": "Käitumine",
+    "SISSEKANNE_L": "Lõpptulemus",
+    "SISSEKANNE_R": "Perioodi hinne",
+    "SISSEKANNE_P": "Praktiline töö",
+    "SISSEKANNE_T": "Tund",
+    "SISSEKANNE_O": "Õpiväljund"
+};
