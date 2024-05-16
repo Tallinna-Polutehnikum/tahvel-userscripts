@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.2
+// @version      1.1.3
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -199,17 +199,18 @@ console.log = GM_log;
         });
 
         // Calculate the average grade with 1 decimal place
-        const averageGrade = count > 0 ? (total / count).toFixed(1) : '2.0';
+        const averageGrade = count > 0 ? (total / count).toFixed(1) : '0.0';
 
         return [averageGrade, total];
     }
 
     // Function to add the narrow column
     function addAverageGradeColumn() {
-        // Find the table header cells containing the word "Hindamine" or "Tund"
+        // Find the table header cells which are not the period/final grade columns
         const tableHeaders = document.querySelectorAll('.journalTable th > div:not([aria-label*="Perioodi hinne"]):not([aria-label*="Lõpptulemus"])');
-        // Or use your own name to get all the columns that can contain grades
-        // const tableHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Timo Triisa"]');
+
+        // Find Perioodi hinne
+        const periodGradeHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Perioodi hinne"]');
 
         // Get the index of each grade column
         const gradeColumnIndices = Array.from(tableHeaders).map(header => {
@@ -217,10 +218,29 @@ console.log = GM_log;
             return columnIndex;
         });
 
+        // Get the indexes of the Perioodi hinne columns
+        const periodGradeColumnIndices = Array.from(periodGradeHeaders).map(header => {
+            const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
+            return columnIndex;
+        });
+
         // Get all the rows in the table
         const rows = document.querySelectorAll('.journalTable tr');
-        let bestTotalScore = 0;
-        let totalColumnsAndScores = []; // tuple of [td DOM, totalScore]
+        const headerRow = rows[0];
+
+        for (let i = 0; i < periodGradeColumnIndices.length; i++) {
+            const narrowColumnHeader = document.createElement('th');
+            narrowColumnHeader.textContent = 'Keskm.';
+            narrowColumnHeader.style.width = '20px'; // Set the width of the narrow column
+            narrowColumnHeader.style.padding = '0 2px';
+            headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i*2)]);
+
+            const totalColumnHeader = document.createElement('th');
+            totalColumnHeader.textContent = 'Summa';
+            totalColumnHeader.style.width = '20px'; // Set the width of the narrow column
+            totalColumnHeader.style.padding = '0 2px';
+            headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i*2)]);
+        }
 
         // Loop through each row
         rows.forEach((row, rowIndex) => {
@@ -237,67 +257,77 @@ console.log = GM_log;
             });
 
             let grades = [];
+            for (let i = 0; i < periodGradeColumnIndices.length; i++) {
+                grades[i] = [];
+            }
 
             // Extract the grades for the current row
+            let currentPeriodIndex = 0;
             gradeColumnIndices.forEach(columnIndex => {
-                const gradeCell = row.querySelectorAll('td')[columnIndex];
-                const gradeText = gradeCell.textContent.trim();
-                grades.push(gradeText);
+                if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) {
+                    currentPeriodIndex++;
+                }
+                if (currentPeriodIndex < periodGradeColumnIndices.length) {
+                    const gradeCell = row.querySelectorAll('td')[columnIndex];
+                    const gradeText = gradeCell.textContent.trim();
+                    grades[currentPeriodIndex].push(gradeText);
+                }
             });
 
             // Calculate the average grade
-            const [averageGrade, totalScore] = calculateAverageGrade(grades);
-            if (totalScore > bestTotalScore) {
-                bestTotalScore = totalScore;
+            for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+                /** @type {[HTMLTableCellElement, number]} tuple of [td DOM, totalScore] */
+                let totalColumnsAndScore = [];
+                const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
+
+                // Create the narrow column cell for average grade
+                const narrowColumnCell = document.createElement('td');
+                narrowColumnCell.style.width = '20px'; // Set the width of the narrow column
+                narrowColumnCell.style.padding = '0 2px';
+                narrowColumnCell.textContent = averageGrade;
+                // set the title to first column text before comma
+                narrowColumnCell.title = row.querySelectorAll('td')?.[1]?.textContent.split(',')?.[0]?.trim() ?? '';
+
+                // Set the background color based on the grade
+                narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || '#fff';
+
+                // Append the narrow column cell to the row
+                row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex*2)]);
+
+                // Create the narrow column cell for total score
+                const totalColumn = document.createElement('td');
+                totalColumn.style.width = '20px'; // Set the width of the narrow column
+                totalColumn.style.padding = '0 2px';
+                totalColumn.textContent = totalScore;
+                // set the title to first column text before comma
+                totalColumn.title = row.querySelectorAll('td')?.[1]?.textContent.split(',')?.[0]?.trim() ?? '';
+
+                totalColumnsAndScore.push([totalColumn, totalScore]);
+
+                // Append the narrow column cell to the row
+                row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex*2)]);
+
+                // Find the second best total score
+                const secondBestTotalScore = totalColumnsAndScore
+                    .map(([totalColumn, totalScore]) => totalScore)
+                    .sort((a, b) => b - a)[1];
+
+                totalColumnsAndScore.forEach(([totalColumn, totalScore]) => {
+                    // Normalize single totalScore related to bestTotalScore
+                    const normalizedTotalScore = totalScore / secondBestTotalScore;
+                    // Make color from green to white to red based on normalizedTotalScore
+                    // 179, 255, 179
+                    // 255, 179, 179
+                    let color = "";
+                    if (normalizedTotalScore > 0.6)
+                        color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
+                    else
+                        color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
+
+                    // Set the background color based on the grade
+                    totalColumn.style.backgroundColor = color || '#fff';
+                });
             }
-
-            // Create the narrow column cell for average grade
-            const narrowColumnCell = document.createElement('td');
-            narrowColumnCell.style.width = '20px'; // Set the width of the narrow column
-            narrowColumnCell.style.padding = '0 2px';
-            narrowColumnCell.textContent = averageGrade;
-            // set the title to first column text before comma
-            narrowColumnCell.title = row.querySelectorAll('td')?.[1]?.textContent.split(',')?.[0]?.trim() ?? '';
-
-            // Set the background color based on the grade
-            narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || '#fff';
-
-            // Append the narrow column cell to the row
-            row.appendChild(narrowColumnCell);
-
-            // Create the narrow column cell for total score
-            const totalColumn = document.createElement('td');
-            totalColumn.style.width = '20px'; // Set the width of the narrow column
-            totalColumn.style.padding = '0 2px';
-            totalColumn.textContent = totalScore;
-            // set the title to first column text before comma
-            totalColumn.title = row.querySelectorAll('td')?.[1]?.textContent.split(',')?.[0]?.trim() ?? '';
-
-            totalColumnsAndScores.push([totalColumn, totalScore]);
-
-            // Append the narrow column cell to the row
-            row.appendChild(totalColumn);
-        });
-
-        // Find the second best total score
-        const secondBestTotalScore = totalColumnsAndScores
-            .map(([totalColumn, totalScore]) => totalScore)
-            .sort((a, b) => b - a)[1];
-
-        totalColumnsAndScores.forEach(([totalColumn, totalScore]) => {
-            // Normalize single totalScore related to bestTotalScore
-            const normalizedTotalScore = totalScore / secondBestTotalScore;
-            // Make color from green to white to red based on normalizedTotalScore
-            // 179, 255, 179
-            // 255, 179, 179
-            let color = "";
-            if (normalizedTotalScore > 0.6)
-                color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-            else
-                color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
-
-            // Set the background color based on the grade
-            totalColumn.style.backgroundColor = color || '#fff';
         });
     }
     //#endregion
@@ -313,11 +343,12 @@ console.log = GM_log;
             return;
         }
 
-        let tableBody = entryDOMs[0];
-        while (tableBody.tagName !== "TABLE") {
-            tableBody = tableBody.parentElement;
+        let table = entryDOMs[0];
+        while (table.tagName !== "TABLE") {
+            table = table.parentElement;
         }
-        tableBody = tableBody?.querySelector("tbody");
+        let tableBody = table?.querySelector("tbody");
+        let headerRow = table.querySelector("thead tr");
 
         // TODO cached fetch to avoid multiple requests during re-renders
         let response1 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
@@ -340,7 +371,7 @@ console.log = GM_log;
             "credentials": "include"
         });
         let dataEntries = await response1.json();
-        fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
+        let response2 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
             "headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
                 "Accept": "application/json, text/plain, */*",
@@ -356,54 +387,60 @@ console.log = GM_log;
             "method": "GET",
             "mode": "cors",
             "credentials": "include"
-        }).then(r => r.json()).then(entries => {
-            entries.forEach((dateEntry, index) => {
-                let entry = dataEntries.content.find(dataEntry => dataEntry.id === dateEntry.id);
-                let el = entryDOMs[index];
-                let entryType = SissekandedEnum[entry.entryType];
-                if (entry.nameEt !== entryType)
-                    entryType += ": " + entry.nameEt;
-                let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
-                if (entry.homework) {
-                    let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString('et') : "";
-                    tooltipContent += `<br><br><b>Kodutöö ${duedate}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
-                }
-                let tooltip = createTooltip(el, tooltipContent);
+        });
+        let journalEntries = await response2.json();
+        let domIndex = 0;
+        let skipHeaders = ["Nr", "Õppija, Õpperühm", "Keskm.", "Summa"];
+        journalEntries.forEach((dateEntry, entryIndex) => {
+            domIndex++;
+            let content = headerRow.children[domIndex].textContent;
+            while (skipHeaders.includes(content)) {
+                domIndex++;
+                content = headerRow.children[domIndex].textContent;
+            }
+            let entry = dataEntries.content.find(dataEntry => dataEntry.id === dateEntry.id);
+            let el = entryDOMs[entryIndex];
+            let entryType = SissekandedEnum[entry.entryType];
+            if (entry.nameEt !== entryType)
+                entryType += ": " + entry.nameEt;
+            let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
+            if (entry.homework) {
+                let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString('et') : "";
+                tooltipContent += `<br><br><b>Kodutöö ${duedate}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
+            }
+            let tooltip = createTooltip(el, tooltipContent);
+
+            el.addEventListener('mousemove', (event) => {
+                tooltip.style.display = 'block';
+                tooltip.style.top = event.clientY + 20 + window.scrollY + 'px';
+                tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + 'px';
+            });
+            el.addEventListener('mouseout', () => {
+                if (tooltip.style.display === 'block')
+                    tooltip.style.display = 'none';
+            });
+
+            // find the index of the first th
+            let closestTH = el.parentElement;
+            while (closestTH && closestTH.tagName !== "TH") {
+                closestTH = closestTH.parentElement;
+            }
+            // Go through all rows and get the element at the same index
+            for (let i = 0; i < tableBody.children.length; i++) {
+                let el = tableBody.children[i].children[domIndex].querySelector("div.layout-row > div");
+                if (!el) continue;
 
                 el.addEventListener('mousemove', (event) => {
                     tooltip.style.display = 'block';
-                    tooltip.style.top = event.clientY + 20 + window.scrollY + 'px';
+                    tooltip.style.top = event.clientY + 46 + window.scrollY + 'px';
                     tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + 'px';
                 });
                 el.addEventListener('mouseout', () => {
                     if (tooltip.style.display === 'block')
                         tooltip.style.display = 'none';
                 });
-
-                // find the index of the first th
-                let closestTH = el.parentElement;
-                while (closestTH && closestTH.tagName !== "TH") {
-                    closestTH = closestTH.parentElement;
-                }
-                // Get the index of the element in the row
-                let columnIndex = Array.from(closestTH.parentElement.children).indexOf(closestTH);
-                // Go through all rows and get the element at the same index
-                for (let i = 0; i < tableBody.children.length; i++) {
-                    let el = tableBody.children[i].children[columnIndex].querySelector("div.layout-row > div");
-                    if (!el) continue;
-
-                    el.addEventListener('mousemove', (event) => {
-                        tooltip.style.display = 'block';
-                        tooltip.style.top = event.clientY + 46 + window.scrollY + 'px';
-                        tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + 'px';
-                    });
-                    el.addEventListener('mouseout', () => {
-                        if (tooltip.style.display === 'block')
-                            tooltip.style.display = 'none';
-                    });
-                }
-            });
-        }).catch(e => console.log(e));
+            }
+        });
 
         function createTooltip(element, content) {
             let clone;
