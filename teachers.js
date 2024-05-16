@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.3
+// @version      1.1.4
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -212,6 +212,8 @@ console.log = GM_log;
         // Find Perioodi hinne
         const periodGradeHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Perioodi hinne"]');
 
+        const finalGradeHeader = document.querySelector('.journalTable th > div[aria-label*="Lõpptulemus"]').parentElement;
+
         // Get the index of each grade column
         const gradeColumnIndices = Array.from(tableHeaders).map(header => {
             const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
@@ -227,7 +229,7 @@ console.log = GM_log;
         // Get all the rows in the table
         const rows = document.querySelectorAll('.journalTable tr');
         const headerRow = rows[0];
-        
+
         /** @type {[HTMLTableCellElement, number][]}  [td DOM, totalScore] */
         let totalColumnsAndScores = [];
 
@@ -247,6 +249,13 @@ console.log = GM_log;
             headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
         }
 
+        const periodGradesHeader = document.createElement('th');
+        periodGradesHeader.textContent = 'Perioodide hinded';
+        periodGradesHeader.style.width = '20px'; // Set the width of the narrow column
+        periodGradesHeader.style.padding = '0 2px';
+        periodGradesHeader.style.backgroundColor = 'rgba(240, 98, 146, 0.5)';
+        headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
+
         // Loop through each row
         rows.forEach((row, rowIndex) => {
             // Skip the header row
@@ -262,6 +271,7 @@ console.log = GM_log;
             });
 
             let grades = [];
+            let periodGrades = [];
             for (let i = 0; i < periodGradeColumnIndices.length; i++) {
                 grades[i] = [];
             }
@@ -277,6 +287,13 @@ console.log = GM_log;
                     const gradeText = gradeCell.textContent.trim();
                     grades[currentPeriodIndex].push(gradeText);
                 }
+            });
+
+            // Extract period grades
+            periodGradeColumnIndices.forEach((columnIndex, index) => {
+                const gradeCell = row.querySelectorAll('td')[columnIndex];
+                const gradeText = gradeCell.textContent.trim();
+                periodGrades.push(gradeText.trim().split('/').pop().trim());
             });
 
             // Calculate the average grade
@@ -313,6 +330,12 @@ console.log = GM_log;
                 // Append the narrow column cell to the row
                 row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex * 2)]);
             }
+
+            // Create the column cell for period grades
+            const periodGradeCell = document.createElement('td');
+            periodGradeCell.style.padding = '0 2px';
+            periodGradeCell.textContent = periodGrades?.join(" / ") ?? '';
+            row.insertBefore(periodGradeCell, row.children[finalGradeHeader.cellIndex-1]);
         });
 
         for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
