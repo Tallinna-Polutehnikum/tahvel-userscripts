@@ -227,19 +227,24 @@ console.log = GM_log;
         // Get all the rows in the table
         const rows = document.querySelectorAll('.journalTable tr');
         const headerRow = rows[0];
+        
+        /** @type {[HTMLTableCellElement, number][]}  [td DOM, totalScore] */
+        let totalColumnsAndScores = [];
 
         for (let i = 0; i < periodGradeColumnIndices.length; i++) {
             const narrowColumnHeader = document.createElement('th');
             narrowColumnHeader.textContent = 'Keskm.';
             narrowColumnHeader.style.width = '20px'; // Set the width of the narrow column
             narrowColumnHeader.style.padding = '0 2px';
-            headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i*2)]);
+            narrowColumnHeader.style.backgroundColor = 'rgba(197, 202, 233, 0.5)';
+            headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
 
             const totalColumnHeader = document.createElement('th');
             totalColumnHeader.textContent = 'Summa';
             totalColumnHeader.style.width = '20px'; // Set the width of the narrow column
             totalColumnHeader.style.padding = '0 2px';
-            headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i*2)]);
+            totalColumnHeader.style.backgroundColor = 'rgba(197, 202, 233, 0.5)';
+            headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
         }
 
         // Loop through each row
@@ -276,8 +281,6 @@ console.log = GM_log;
 
             // Calculate the average grade
             for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
-                /** @type {[HTMLTableCellElement, number]} tuple of [td DOM, totalScore] */
-                let totalColumnsAndScore = [];
                 const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
 
                 // Create the narrow column cell for average grade
@@ -292,7 +295,7 @@ console.log = GM_log;
                 narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || '#fff';
 
                 // Append the narrow column cell to the row
-                row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex*2)]);
+                row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex * 2)]);
 
                 // Create the narrow column cell for total score
                 const totalColumn = document.createElement('td');
@@ -302,33 +305,38 @@ console.log = GM_log;
                 // set the title to first column text before comma
                 totalColumn.title = row.querySelectorAll('td')?.[1]?.textContent.split(',')?.[0]?.trim() ?? '';
 
-                totalColumnsAndScore.push([totalColumn, totalScore]);
+                if (totalColumnsAndScores[pgIndex] === undefined) {
+                    totalColumnsAndScores[pgIndex] = [];
+                }
+                totalColumnsAndScores[pgIndex].push([totalColumn, totalScore]);
 
                 // Append the narrow column cell to the row
-                row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex*2)]);
-
-                // Find the second best total score
-                const secondBestTotalScore = totalColumnsAndScore
-                    .map(([totalColumn, totalScore]) => totalScore)
-                    .sort((a, b) => b - a)[1];
-
-                totalColumnsAndScore.forEach(([totalColumn, totalScore]) => {
-                    // Normalize single totalScore related to bestTotalScore
-                    const normalizedTotalScore = totalScore / secondBestTotalScore;
-                    // Make color from green to white to red based on normalizedTotalScore
-                    // 179, 255, 179
-                    // 255, 179, 179
-                    let color = "";
-                    if (normalizedTotalScore > 0.6)
-                        color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-                    else
-                        color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
-
-                    // Set the background color based on the grade
-                    totalColumn.style.backgroundColor = color || '#fff';
-                });
+                row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + (pgIndex * 2)]);
             }
         });
+
+        for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+            // Find the second best total score
+            const secondBestTotalScore = totalColumnsAndScores[pgIndex]
+                .map(([totalColumn, totalScore]) => totalScore)
+                .sort((a, b) => b - a)[1];
+
+            totalColumnsAndScores[pgIndex].forEach(([totalColumn, totalScore]) => {
+                // Normalize single totalScore related to bestTotalScore
+                const normalizedTotalScore = totalScore / secondBestTotalScore;
+                // Make color from green to white to red based on normalizedTotalScore
+                // 179, 255, 179
+                // 255, 179, 179
+                let color = "";
+                if (normalizedTotalScore > 0.6)
+                    color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
+                else
+                    color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
+
+                // Set the background color based on the grade
+                totalColumn.style.backgroundColor = color || '#fff';
+            });
+        }
     }
     //#endregion
 
