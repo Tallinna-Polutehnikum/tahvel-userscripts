@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -114,7 +114,8 @@ console.log = GM_log;
         let studentId = window.location.href.match(/students\/(\d+)/)?.[1];
         if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Sooritamise järjekorras']`)) {
             let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
-            if (table && !isAlreadyApplied(table)) {
+            let tableRows = table.querySelectorAll("tbody tr");
+            if (table && tableRows.length > 5 && !isAlreadyApplied(table)) {
                 filterForInOrderOfPassing(table, studentId);
                 addAppliedMarker(table);
             }
