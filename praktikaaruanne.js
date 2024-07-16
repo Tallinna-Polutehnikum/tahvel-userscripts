@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Praktikaaruanne
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Detailsem praktikate ülevaade
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -27,12 +27,29 @@ const ContractStatus = {
     // TODO students local database: name, isikukood, email, group, missing grades, last update (grades, practice, thesis), practice manual good-to-go, has practice contract int, completed hours, thesis (date, topic, grade, manual good-to-go), etc
     // TODO grades history database: student, subject, grade, date, teacher, etc
 
+
+    //importGroups("TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21".split(" "));
+    //importGroups("TA-19E TA-19V KTA-21E KTA-21V IT-19E IT-19V KIT-21E KIT-21V SA-20".split(" "));
+    //importGroups("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
+
     //updateGroupsMap(); // once a year
     //updatePracticeReports("TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21".split(" "));
     //printPracticeReports("TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21".split(" "));
     //updatePracticeReport(3326);
     //printPracticeReport(3326, 'tsv');
 
+    //itgroups = "TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21 TA-19E TA-19V KTA-21E KTA-21V IT-19E IT-19V KIT-21E KIT-21V SA-20 TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" ");
+    //importGroups(itgroups);
+    //updatePracticeReports(itgroups);
+    //printFullReports(itgroups);
+
+    //importGroups("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
+    //updatePracticeReports("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
+    //printFullReports("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
+
+
+    unsafeWindow.printFullReports = printFullReports;
+    unsafeWindow.importGroups = importGroups;
     unsafeWindow.updatePracticeReports = updatePracticeReports;
     unsafeWindow.printPracticeReports = printPracticeReports;
     unsafeWindow.updatePracticeReport = updatePracticeReport;
@@ -48,7 +65,59 @@ async function updatePracticeReports(groups) {
         }
 
         await updatePracticeReport(groupsMap[group]);
+        await savePracticeReport(groupsMap[group]);
     }
+}
+
+async function importGroups(groups) {
+    for (let group of groups) {
+        if (!groupsMap[group]) {
+            console.warn(`Group ${group} not found in groupsMap`);
+            continue;
+        }
+
+        await importStudents(groupsMap[group]);
+    }
+}
+
+async function savePracticeReport(groupId) {
+    // get data from local storage
+    const localStorageKey = `us_praktikaaruanne_${groupId}`;
+    const students = JSON.parse(localStorage.getItem(localStorageKey));
+    const pinToStudentId = JSON.parse(localStorage.getItem("pinToStudentId")) ?? {};
+    const pinToStudentGroup = JSON.parse(localStorage.getItem("pinToStudentGroup")) ?? {};
+    const studentIdToPin = Object.fromEntries(Object.entries(pinToStudentId).map(([key, value]) => [value, key]));
+
+    Object.entries(students).forEach(([studentId, practiceSummary]) => {
+        if (!studentIdToPin[studentId] || studentIdToPin[studentId]?.length !== 11) {
+            console.warn(`Student ${studentId} not found in pinToStudentId, skipping one entry savePracticeReport (group:${groupId})`);
+            return;
+        }
+        let pin = studentIdToPin[studentId];
+
+        // remove unnecessary data
+        delete practiceSummary.name;
+        delete practiceSummary.group;
+        delete practiceSummary.email;
+        delete practiceSummary.contracts;
+
+        // Save to Azure Cosmos DB using API
+        fetch("http://localhost:3000/students/save", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ id: pin, pin, studentGroup: pinToStudentGroup[pin], practiceSummary }),
+        }).then(response => {
+            if (response.ok) {
+                console.log(reverseGroupsMap[groupId] + " Student practiceSummary updated successfully");
+            } else {
+                console.error("Failed to save student");
+            }
+        }).catch(error => {
+            console.error(error);
+        });
+    });
 }
 
 function printPracticeReports(groups, type = "tsv") {
@@ -60,6 +129,76 @@ function printPracticeReports(groups, type = "tsv") {
         }
 
         result += printPracticeReport(groupsMap[group], type, false);
+    }
+    return result;
+}
+
+async function printFullReports(groups) {
+    let result = "";
+    let isFirst = true;
+    for (let group of groups) {
+        if (!groupsMap[group]) {
+            console.warn(`Group ${group} not found in groupsMap`);
+            continue;
+        }
+
+        result += await printFullReport(groupsMap[group], 'tsv', isFirst);
+        isFirst = false;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(result);
+        console.log("Full report copied to clipboard");
+    } catch (error) {
+        console.error(error.message);
+        console.log(result);
+    }
+    return result;
+}
+
+async function printFullReport(groupId, type = "tsv", addHeader = false) {
+    let result = "";
+    /** @var string[] groupStudentsPins */
+    let groupStudentsPins = JSON.parse(localStorage.getItem(`group_student_pins_${groupId}`));
+    let groupCode = reverseGroupsMap[groupId];
+
+    const studentKeys = [
+        "firstName", "lastName", "studentGroup", "pin", "tahvelId", "lastTahvelGtrUpdate", "officialEmail", "personalEmail",
+        "ehisCode", "curriculumPercentage", "totalFinalGrades", "negativeFinalGrades", "practiceGrade", "thesisGrade"
+    ];
+    const practiceSummaryKeys = [
+        "firstContractStartDate", "lastContractEndDate", "maxHours", "totalHours", "totalDiaryEntries", "supervisorComments",
+        "teacherComments", "totalCharsInDescription"
+    ];
+    result += addHeader ? studentKeys.concat(practiceSummaryKeys).join("\t") + "\n" : "";
+
+    for (let pin of groupStudentsPins) {
+        // Retrieve student from Azure Cosmos DB using API
+        let response = await fetch(`http://localhost:3000/students/${groupCode}/${pin}`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        })
+
+        if (response.ok) {
+            let student = await response.json();
+            if (!student) {
+                console.error("Student not found in database or JSON parse error " + pin + " " + groupCode);
+                return;
+            }
+            //console.log("Got student " + pin + " " + groupCode, student);
+            let studentData = studentKeys.map(key => student[key]);
+            if (student.practiceSummary) {
+                let practiceSummaryData = practiceSummaryKeys.map(key => student.practiceSummary[key]);
+                studentData.push(...practiceSummaryData);
+            } else {
+                studentData.push(...Array(practiceSummaryKeys.length).fill(""));
+            }
+            result += studentData.join("\t") + "\n";
+        } else {
+            console.error("Failed to get student " + pin + " " + groupCode);
+        }
     }
     return result;
 }
@@ -174,6 +313,7 @@ function updatePracticeReport(groupId) {
                     totalCharsInDescription: 0,
                     hoursOnWeekdays: [0, 0, 0, 0, 0, 0, 0],
                     contracts: {},
+                    companiesString: "",
                     firstContractStartDate: null,
                     lastContractEndDate: null,
                     completedContracts: 0,
@@ -186,6 +326,7 @@ function updatePracticeReport(groupId) {
                     supervisorEvalFilled: 0,
                     supervisorEvalWorst: 0,
                     supervisorEvalComments: "",
+                    lastTahvelUpdate: new Date().toISOString(),
                 }
             }
 
@@ -228,18 +369,22 @@ function updatePracticeReport(groupId) {
             getJson("https://tahvel.edu.ee/hois_back/practiceJournals/" + contractJournalId).then(data => {
                 const contract = students[studentId].contracts[contractJournalId];
 
+                if (!data.contract || !data.contract.startDate) {
+                    console.log("invalid contract data", data)
+                }
 
-                contract.startDate = data.contract.startDate,
-                    contract.endDate = data.contract.endDate,
-                    contract.status = data.contract.status,
-                    contract.companyName = data.contract.enterprise.nameEt,
-                    contract.supervisor = data.contract.supervisors?.[0];
+                contract.startDate = data.contract.startDate;
+                contract.endDate = data.contract.endDate;
+                contract.status = data.contract.status;
+                contract.companyName = data.contract.enterprise.nameEt;
+                contract.companiesString += data.contract.enterprise.nameEt + ", ";
+                contract.supervisor = data.contract.supervisors?.[0];
                 contract.plannedHours = data.contract.moduleSubjects.reduce((acc, subject) => acc + subject.hours, 0);
 
                 let startDate = new Date(data.contract.startDate);
                 let endDate = new Date(data.contract.endDate);
                 // get max weekdays between start and end date then multiply by 8 to get max hours
-                contract.maxHours = (endDate - startDate) / (1000 * 60 * 60 * 24) / 7 * 5 * 8;
+                contract.maxHours = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24) / 7 * 5 * 8);
                 students[studentId].maxHours += contract.maxHours;
                 if (students[studentId].firstContractStartDate === null || startDate < new Date(students[studentId].firstContractStartDate)) {
                     students[studentId].firstContractStartDate = startDate.toISOString();
@@ -303,6 +448,106 @@ function updatePracticeReport(groupId) {
             });
         }, 500);
     });
+}
+
+async function importStudents(groupId) {
+    return new Promise(async (resolve, reject) => {
+        let query = new URLSearchParams();
+        query.set("fullname", "false");
+        query.set("lang", "ET");
+        query.set("resultType", "STUDENT_DATA_ACTIVE");
+        query.set("page", "0");
+        query.set("size", "50");
+        query.set("sort", "lastname,firstname");
+        query.set("studentGroups", groupId);
+
+        pinToStudentId = JSON.parse(localStorage.getItem("pinToStudentId")) ?? {};
+        pinToStudentGroup = JSON.parse(localStorage.getItem("pinToStudentGroup")) ?? {};
+        let data = await getJson("https://tahvel.edu.ee/hois_back/reports/students/data?" + query.toString());
+        //console.log(data);
+        let students = data.content.map(s => {
+            pinToStudentId[s.idcode.toString()] = s.studentId;
+            pinToStudentGroup[s.idcode.toString()] = reverseGroupsMap[s.studentGroups.id];
+            return {
+                tahvelId: s.studentId,
+                //name: s.fullname,
+                firstName: s.firstname,
+                lastName: s.lastname,
+                studentGroup: reverseGroupsMap[s.studentGroups.id],
+                studentGroupTahvelId: s.studentGroups.id,
+                pin: s.idcode.toString(),
+                officialEmail: s.officialEmail,
+                personalEmail: s.personalEmail,
+                ehisCode: s.ehisCode,
+                curriculumPercentage: s.curriculumPercentage,
+                immatDate: s.immatDate,
+                finishedDate: s.finishedDate,
+            };
+        })
+        localStorage.setItem("pinToStudentId", JSON.stringify(pinToStudentId));
+        localStorage.setItem("pinToStudentGroup", JSON.stringify(pinToStudentGroup));
+
+        students.forEach(async student => {
+            let gradesData = await getStudentFinalGrades(student.tahvelId);
+            student = { ...student, ...gradesData };
+            // Save to localStorage
+            localStorage.setItem("student_" + student.isikukood, JSON.stringify(student));
+            // Save to Azure Cosmos DB using API
+            fetch("http://localhost:3000/students/save", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(student),
+            }).then(response => {
+                if (response.ok) {
+                    console.log(student.studentGroup + " Student saved successfully");
+                } else {
+                    console.error("Failed to save student");
+                }
+            }).catch(error => {
+                console.error(error);
+                reject(error);
+            });
+        });
+
+        localStorage.setItem("group_" + groupId, JSON.stringify(data));
+        localStorage.setItem("group_student_pins_" + groupId, JSON.stringify(data.content.map(s => s.idcode.toString())));
+        resolve(data);
+    });
+}
+
+async function getStudentFinalGrades(studentId) {
+    //tahvel??
+    // todo tahevel gtr rühmajuhataja aruanne tuleks siis kui on meil veel õppiv õpilane, muul juhul võtaks selle lõpphinded ainult?
+
+    // grades, if gtr doesn't work anymore, see töötab küll, vaja lihtsalt id-d sisestada ja curriculumi kood ära võtta
+    let data = await getJson(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalResultsByTime?sort=kp+desc,+my_theme`);
+    //console.log(data);
+    /** @var {Student} student */
+    let student = {
+        grades: [],
+        lastTahvelGtrUpdate: (new Date()).toISOString(),
+    }
+    data.forEach(gradeEntry => {
+        if (gradeEntry.entryType === "SISSEKANNE_L") {
+            let grade = gradeEntry.grade?.code?.split("_")?.[1] ?? "";
+            student.grades.push([
+                gradeEntry.journalName,
+                gradeEntry.date,
+                gradeEntry.teachers,
+                grade,
+                "",
+            ]);
+            student.totalFinalGrades = (student.totalFinalGrades ?? 0) + 1;
+            if (["", "0", "1", "2", "X", "MA"].includes(grade)) {
+                student.negativeFinalGrades = (student.negativeFinalGrades ?? 0) + 1;
+            }
+        }
+    });
+    student.practiceGrade = data.filter(r => r.name?.nameEt?.toLowerCase().includes("praktika") && r.isModule).map(r => r.grade?.code?.split("_")?.[1] ?? "").join(",");
+    student.thesisGrade = data.filter(r => (r.name?.nameEt?.toLowerCase().includes("lõputöö") || r.name?.nameEt?.toLowerCase().includes("lõpueksam")) && r.isModule).map(r => r.grade?.code?.split("_")?.[1] ?? "").join(",");
+    return student;
 }
 
 function getJson(url) {
