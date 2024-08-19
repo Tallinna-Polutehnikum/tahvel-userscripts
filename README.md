@@ -1,6 +1,6 @@
 # tahvel-userscripts
 
-## Kuidas installide õpetajatele mõeldud skripti
+## Kuidas installeerida õpetajatele mõeldud skripti
 
 Alustuseks on vaja veebilehitsejale installeerida Tampermonkey laiendus.
 Vali [Tampermonkey koduelehelt](https://www.tampermonkey.net/index.php?locale=en) enda veebilehitseja ja seejärel vajuta alt `Get from Store`
