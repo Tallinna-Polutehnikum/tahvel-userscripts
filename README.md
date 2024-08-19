@@ -5,9 +5,9 @@
 Alustuseks on vaja veebilehitsejale installeerida Tampermonkey laiendus.
 Vali [Tampermonkey koduelehelt](https://www.tampermonkey.net/index.php?locale=en) enda veebilehitseja ja seejärel vajuta alt `Get from Store`
 
-Pärast laienduse paigaldamist tuleb lisada Tahvli jaoks skript. Alustuseks otsi üles tööriistariba pealt Tampermonkey logo (see võib olla peidus ka kolme punkti/kriipsu taga menüüs).  
+Pärast laienduse paigaldamist tuleb lisada Tahvli jaoks skript. Alustuseks otsi üles tööriistariba pealt Tampermonkey logo (see võib olla peidus ka kolme punkti/kriipsu või pusletüki taga menüüs).  
 Seejärel saad valida `Create a new script...`  
-![create-script](https://github.com/user-attachments/assets/23a32bc9-87cb-446a-ad4f-5e23d9d9c876)
+![create-script](https://github.com/user-attachments/assets/23a32bc9-87cb-446a-ad4f-5e23d9d9c876)  
 Avanevasse aknasse tuleks kleepida [teachers.js](https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js) faili seest kogu kood, seejärel salvestada (Ctrl+S)
 
 Kui kõik õigesti läks siis Tahvlisse minnes Tampermonkey näitab seda skripti nime ja rohelist nuppu - kõik toimib.
@@ -17,7 +17,8 @@ Edaspidi uuendab see end selles konkreetses arvutis ise. Igasse arvutisse tuleb 
 
 ## Funktsioonid
 ### Keskmised hinded
-![keskmine-hinne](https://github.com/user-attachments/assets/1ecf9641-6cd4-4699-95a1-7b891ee91e66)
+Selleks, et keskmist hinnet arvutaks on vaja lisada päevikusse Perioodi hinde sissekanne (kasvõi ilma kuupäevata).
+![keskmine-hinne](https://github.com/user-attachments/assets/1ecf9641-6cd4-4699-95a1-7b891ee91e66)  
 *\*A ehk arvestatud ei arvutata keskmise hindena. MA ja X arvestatakse hindena 0*
 ### Tunni kirjeldus
 ![tunni-kirjeldus](https://github.com/user-attachments/assets/4657dd65-addd-4279-b7ba-20a5bf3ba6bc)
