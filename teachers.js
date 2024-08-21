@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.6
+// @version      1.1.7
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -24,7 +24,6 @@
 
 // Features:
 // - Päevikus näeb õpilase keskmist hinnet
-// - TODO Keskmise hinde arvutus peaks resettima poolaasta hinde järel
 // - Päevikus näitab aktiivset rida paksema piirjoonega
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
@@ -210,9 +209,8 @@ console.log = GM_log;
         // Find the table header cells which are not the period/final grade columns
         const tableHeaders = document.querySelectorAll('.journalTable th > div:not([aria-label*="Perioodi hinne"]):not([aria-label*="Lõpptulemus"])');
 
-        // Find Perioodi hinne
+        // Find Perioodi hinne and Lõpptulemus headers
         const periodGradeHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Perioodi hinne"]');
-
         const finalGradeHeader = document.querySelector('.journalTable th > div[aria-label*="Lõpptulemus"]')?.parentElement;
 
         // Get the index of each grade column
@@ -231,35 +229,42 @@ console.log = GM_log;
         const rows = document.querySelectorAll('.journalTable tr');
         const headerRow = rows[0];
 
-        /** @type {[HTMLTableCellElement, number][]}  [td DOM, totalScore] */
-        let totalColumnsAndScores = [];
+        // Remove existing custom headers, because Angular will re-render only the table rows
+        [...document.querySelectorAll('.journalTable th[aria-label*="Keskmine hinne"]')].forEach(header => header.remove());
+        [...document.querySelectorAll('.journalTable th[aria-label*="Hinnete summa"]')].forEach(header => header.remove());
+        [...document.querySelectorAll('.journalTable th[aria-label*="Perioodide hinded"]')].forEach(header => header.remove());
 
         for (let i = 0; i < periodGradeColumnIndices.length; i++) {
             const narrowColumnHeader = document.createElement('th');
             narrowColumnHeader.textContent = 'Keskm.';
+            narrowColumnHeader.setAttribute('aria-label', 'Keskmine hinne');
             narrowColumnHeader.style.width = '20px'; // Set the width of the narrow column
             narrowColumnHeader.style.padding = '0 2px';
-            narrowColumnHeader.style.backgroundColor = 'rgba(197, 202, 233, 0.5)';
+            narrowColumnHeader.style.backgroundColor = '#e2e4f4';
             headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
 
             const totalColumnHeader = document.createElement('th');
             totalColumnHeader.textContent = 'Summa';
+            totalColumnHeader.setAttribute('aria-label', 'Hinnete summa');
             totalColumnHeader.style.width = '20px'; // Set the width of the narrow column
             totalColumnHeader.style.padding = '0 2px';
-            totalColumnHeader.style.backgroundColor = 'rgba(197, 202, 233, 0.5)';
+            totalColumnHeader.style.backgroundColor = '#e2e4f4';
             headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
         }
 
         if (finalGradeHeader) {
             const periodGradesHeader = document.createElement('th');
             periodGradesHeader.textContent = 'Perioodide hinded';
+            periodGradesHeader.setAttribute('aria-label', 'Perioodide hinded');
             periodGradesHeader.style.width = '20px'; // Set the width of the narrow column
             periodGradesHeader.style.padding = '0 2px';
-            periodGradesHeader.style.backgroundColor = 'rgba(240, 98, 146, 0.5)';
+            periodGradesHeader.style.backgroundColor = '#f7b0c8';
             headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
         }
 
         // Loop through each row
+        /** @type {[HTMLTableCellElement, number][]}  [td DOM, totalScore] */
+        let totalColumnsAndScores = [];
         rows.forEach((row, rowIndex) => {
             // Skip the header row
             if (rowIndex === 0) return;
@@ -273,13 +278,14 @@ console.log = GM_log;
                 this.style.outline = 'unset';
             });
 
+            /** @type {string[][]} First level is period, second is grades as a string with history "X / 3 / 5" */
             let grades = [];
             let periodGrades = [];
             for (let i = 0; i < periodGradeColumnIndices.length; i++) {
                 grades[i] = [];
             }
 
-            // Extract the grades for the current row
+            // Extract the grades for the current row, grouped by period
             let currentPeriodIndex = 0;
             gradeColumnIndices.forEach(columnIndex => {
                 if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) {
@@ -299,7 +305,7 @@ console.log = GM_log;
                 periodGrades.push(gradeText.trim().split('/').pop().trim());
             });
 
-            // Calculate the average grade
+            // Calculate the average grade, insert result as a new cell in the row
             for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
                 const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
 
