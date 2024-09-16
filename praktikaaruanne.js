@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Praktikaaruanne
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Detailsem praktikate ülevaade
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -43,13 +43,17 @@ const ContractStatus = {
     //updatePracticeReports(itgroups);
     //printFullReports(itgroups);
 
+    //importOvertimeStudents("2024-09-01T00:00:00.000Z")
+
     //importGroups("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
     //updatePracticeReports("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
     //printFullReports("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
 
 
-    unsafeWindow.printFullReports = printFullReports;
+    unsafeWindow.printFullReports = printFullGroupsReports;
     unsafeWindow.importGroups = importGroups;
+    unsafeWindow.importStudentsByGroup = importStudentsByGroup;
+    unsafeWindow.importOvertimeStudents = importOvertimeStudents;
     unsafeWindow.updatePracticeReports = updatePracticeReports;
     unsafeWindow.printPracticeReports = printPracticeReports;
     unsafeWindow.updatePracticeReport = updatePracticeReport;
@@ -76,7 +80,7 @@ async function importGroups(groups) {
             continue;
         }
 
-        await importStudents(groupsMap[group]);
+        await importStudentsByGroup(groupsMap[group]);
     }
 }
 
@@ -99,7 +103,7 @@ async function savePracticeReport(groupId) {
         delete practiceSummary.name;
         delete practiceSummary.group;
         delete practiceSummary.email;
-        delete practiceSummary.contracts;
+        //delete practiceSummary.contracts;
 
         // Save to Azure Cosmos DB using API
         fetch("http://localhost:3000/students/save", {
@@ -133,7 +137,7 @@ function printPracticeReports(groups, type = "tsv") {
     return result;
 }
 
-async function printFullReports(groups) {
+async function printFullGroupsReports(groups) {
     let result = "";
     let isFirst = true;
     for (let group of groups) {
@@ -145,7 +149,7 @@ async function printFullReports(groups) {
         result += await printFullReport(groupsMap[group], 'tsv', isFirst);
         isFirst = false;
     }
-    
+
     try {
         await navigator.clipboard.writeText(result);
         console.log("Full report copied to clipboard");
@@ -164,11 +168,11 @@ async function printFullReport(groupId, type = "tsv", addHeader = false) {
 
     const studentKeys = [
         "firstName", "lastName", "studentGroup", "pin", "tahvelId", "lastTahvelGtrUpdate", "officialEmail", "personalEmail",
-        "ehisCode", "curriculumPercentage", "totalFinalGrades", "negativeFinalGrades", "practiceGrade", "thesisGrade"
+        "ehisCode", "studyStart", "nominalStudyEnd", "curriculumPercentage", "totalFinalGrades", "negativeFinalGrades", "practiceGrade", "thesisGrade"
     ];
     const practiceSummaryKeys = [
         "firstContractStartDate", "lastContractEndDate", "maxHours", "totalHours", "totalDiaryEntries", "supervisorComments",
-        "teacherComments", "totalCharsInDescription"
+        "teacherComments", "totalCharsInDescription", "contracts"
     ];
     result += addHeader ? studentKeys.concat(practiceSummaryKeys).join("\t") + "\n" : "";
 
@@ -203,6 +207,53 @@ async function printFullReport(groupId, type = "tsv", addHeader = false) {
     return result;
 }
 
+async function printFullReport(groupId, type = "tsv", addHeader = false) {
+    let result = "";
+    /** @var string[] groupStudentsPins */
+    let groupStudentsPins = JSON.parse(localStorage.getItem(`group_student_pins_${groupId}`));
+    let groupCode = reverseGroupsMap[groupId];
+
+    const studentKeys = [
+        "firstName", "lastName", "studentGroup", "pin", "tahvelId", "lastTahvelGtrUpdate", "officialEmail", "personalEmail",
+        "ehisCode", "studyStart", "nominalStudyEnd", "curriculumPercentage", "totalFinalGrades", "negativeFinalGrades", "practiceGrade", "thesisGrade"
+    ];
+    const practiceSummaryKeys = [
+        "firstContractStartDate", "lastContractEndDate", "maxHours", "totalHours", "totalDiaryEntries", "supervisorComments",
+        "teacherComments", "totalCharsInDescription", "companies"
+    ];
+    result += addHeader ? studentKeys.concat(practiceSummaryKeys).join("\t") + "\n" : "";
+
+    for (let pin of groupStudentsPins) {
+        // Retrieve student from Azure Cosmos DB using API
+        let response = await fetch(`http://localhost:3000/students/${groupCode}/${pin}`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        })
+
+        if (response.ok) {
+            let student = await response.json();
+            if (!student) {
+                console.error("Student not found in database or JSON parse error " + pin + " " + groupCode);
+                return;
+            }
+            //console.log("Got student " + pin + " " + groupCode, student);
+            let studentData = studentKeys.map(key => student[key]);
+            if (student.practiceSummary) {
+                let practiceSummaryFiltered = practiceSummaryKeys.map(key => formatPracticeReportValue(student.practiceSummary, key));
+                studentData.push(...practiceSummaryFiltered);
+            } else {
+                studentData.push(...Array(practiceSummaryKeys.length).fill(""));
+            }
+            result += studentData.join("\t") + "\n";
+        } else {
+            console.error("Failed to get student " + pin + " " + groupCode);
+        }
+    }
+    return result;
+}
+
 function printPracticeReport(groupId, type = "tsv", addHeader = true) {
     if (typeof groupId === "string") {
         groupId = groupsMap[groupId];
@@ -225,34 +276,7 @@ function printPracticeReport(groupId, type = "tsv", addHeader = true) {
     if (type === "tsv") {
         let string = addHeader ? tableHeader.join("\t") + "\n" : "";
         for (let student of sortedStudents) {
-            //const student = students[studentId];
-            string += tableHeader.filter(key => key !== "").map(key => {
-                if (key === "missingFromMinimum") {
-                    return Math.max(880 - student.totalHours, 0);
-                } else if (key === "email") {
-                    let nameParts = student.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(" ");
-                    let lastName = nameParts.pop();
-                    return nameParts.join("") + "." + lastName + "@tptlive.ee";
-                } else if (key === "aproxEnd") {
-                    let hoursPerDay = student.totalDiaryEntries ? student.totalHours / student.totalDiaryEntries : 0;
-                    if (hoursPerDay === 0) return "N/A";
-                    let daysLeft = Math.max(0, 880 - student.totalHours) / hoursPerDay / 5 * 7;
-                    if (daysLeft === 0) return "Korras";
-                    return new Date(new Date().getTime() + daysLeft * 24 * 60 * 60 * 1000).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
-                } else if (key === "firstContractStartDate") {
-                    return new Date(student[key]).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
-                } else if (key === "lastContractEndDate") {
-                    return new Date(student[key]).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
-                } else if (key === "inProgressContracts") {
-                    return (student.completedContracts - student.inProgressContracts) + " / " + (student.completedContracts + student.inProgressContracts);
-                } else if (key === "hoursOnWeekdays") {
-                    return student[key].join("\t");
-                } else if (key === "companies") {
-                    return Object.values(student.contracts).filter(c => c.status === "LEPING_STAATUS_K" || c.status === "LEPING_STAATUS_L").map(c => c.companyName).join("\t");
-                } else {
-                    return student[key];
-                }
-            }).join("\t") + "\n";
+            string += tableHeader.filter(key => key !== "").map(key => formatPracticeReportValue(student, key)).join("\t") + "\n";
         }
         console.log(string);
         return string;
@@ -260,6 +284,34 @@ function printPracticeReport(groupId, type = "tsv", addHeader = true) {
 
     if (type === "table") {
         console.table(sortedStudents);
+    }
+}
+
+function formatPracticeReportValue(data, key) {
+    if (key === "missingFromMinimum") {
+        return Math.max(880 - data.totalHours, 0);
+    } else if (key === "email") {
+        let nameParts = data.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(" ");
+        let lastName = nameParts.pop();
+        return nameParts.join("") + "." + lastName + "@tptlive.ee";
+    } else if (key === "aproxEnd") {
+        let hoursPerDay = data.totalDiaryEntries ? data.totalHours / data.totalDiaryEntries : 0;
+        if (hoursPerDay === 0) return "N/A";
+        let daysLeft = Math.max(0, 880 - data.totalHours) / hoursPerDay / 5 * 7;
+        if (daysLeft === 0) return "Korras";
+        return new Date(new Date().getTime() + daysLeft * 24 * 60 * 60 * 1000).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } else if (key === "firstContractStartDate") {
+        return new Date(data[key]).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } else if (key === "lastContractEndDate") {
+        return new Date(data[key]).toLocaleDateString('et-EE', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } else if (key === "inProgressContracts") {
+        return (data.completedContracts - data.inProgressContracts) + " / " + (data.completedContracts + data.inProgressContracts);
+    } else if (key === "hoursOnWeekdays") {
+        return data[key].join("\t");
+    } else if (key === "companies") {
+        return data?.contracts ? Object.values(data.contracts).filter(c => c.status === "LEPING_STAATUS_K" || c.status === "LEPING_STAATUS_L").map(c => c.companyName).join(", ") : "";
+    } else {
+        return data[key];
     }
 }
 
@@ -450,24 +502,53 @@ function updatePracticeReport(groupId) {
     });
 }
 
-async function importStudents(groupId) {
-    return new Promise(async (resolve, reject) => {
-        let query = new URLSearchParams();
-        query.set("fullname", "false");
-        query.set("lang", "ET");
-        query.set("resultType", "STUDENT_DATA_ACTIVE");
-        query.set("page", "0");
-        query.set("size", "50");
-        query.set("sort", "lastname,firstname");
-        query.set("studentGroups", groupId);
+/**
+ * 
+ * @param {string} date E.g. 2024-09-01T00:00:00.000Z
+ * @returns 
+ */
+function importOvertimeStudents(date) {
+    // https://tahvel.edu.ee/hois_back/reports/students?isHigher=false&lang=ET&page=0&size=50&sort=p.lastname,p.firstname,asc
+    let query = new URLSearchParams();
+    query.set("isHigher", "false");
+    query.set("fullname", "false");
+    query.set("nominalStudyEndThru", date);
+    query.set("lang", "ET");
+    query.set("page", "0");
+    query.set("size", "250");
+    query.set("status", "OPPURSTAATUS_O");
+    query.set("sort", "lastname,firstname");
 
+    return importStudents(query);
+}
+
+function importStudentsByGroup(groupId) {
+    let query = new URLSearchParams();
+    query.set("fullname", "false");
+    query.set("lang", "ET");
+    query.set("resultType", "STUDENT_DATA_ACTIVE");
+    query.set("page", "0");
+    query.set("size", "50");
+    query.set("sort", "lastname,firstname");
+    query.set("studentGroups", groupId);
+
+    return importStudents(query);
+}
+
+function importStudents(query) {
+    return new Promise(async (resolve, reject) => {
         pinToStudentId = JSON.parse(localStorage.getItem("pinToStudentId")) ?? {};
         pinToStudentGroup = JSON.parse(localStorage.getItem("pinToStudentGroup")) ?? {};
+        overtimeStudentsPins = JSON.parse(localStorage.getItem("overtimeStudentsPins")) ?? [];
         let data = await getJson("https://tahvel.edu.ee/hois_back/reports/students/data?" + query.toString());
         //console.log(data);
         let students = data.content.map(s => {
             pinToStudentId[s.idcode.toString()] = s.studentId;
             pinToStudentGroup[s.idcode.toString()] = reverseGroupsMap[s.studentGroups.id];
+            const overTime = new Date(s.nominalStudyEnd) < new Date();
+            if (overTime) {
+                overtimeStudentsPins.push(s.idcode.toString());
+            }
             return {
                 tahvelId: s.studentId,
                 //name: s.fullname,
@@ -480,6 +561,8 @@ async function importStudents(groupId) {
                 personalEmail: s.personalEmail,
                 ehisCode: s.ehisCode,
                 curriculumPercentage: s.curriculumPercentage,
+                studyStart: s.studyStart,
+                nominalStudyEnd: s.nominalStudyEnd,
                 immatDate: s.immatDate,
                 finishedDate: s.finishedDate,
             };
@@ -487,11 +570,13 @@ async function importStudents(groupId) {
         localStorage.setItem("pinToStudentId", JSON.stringify(pinToStudentId));
         localStorage.setItem("pinToStudentGroup", JSON.stringify(pinToStudentGroup));
 
+        localStorageStudents = JSON.parse(localStorage.getItem("students")) ?? {};
         students.forEach(async student => {
             let gradesData = await getStudentFinalGrades(student.tahvelId);
             student = { ...student, ...gradesData };
             // Save to localStorage
-            localStorage.setItem("student_" + student.isikukood, JSON.stringify(student));
+            //localStorage.setItem("student_" + student.pin, JSON.stringify(student));
+            localStorageStudents[student.pin] = student;
             // Save to Azure Cosmos DB using API
             fetch("http://localhost:3000/students/save", {
                 method: "POST",
@@ -511,8 +596,9 @@ async function importStudents(groupId) {
             });
         });
 
-        localStorage.setItem("group_" + groupId, JSON.stringify(data));
-        localStorage.setItem("group_student_pins_" + groupId, JSON.stringify(data.content.map(s => s.idcode.toString())));
+        localStorage.setItem("students", JSON.stringify(localStorageStudents));
+        localStorage.setItem("group_" + query.get("studentGroups"), JSON.stringify(data));
+        localStorage.setItem("group_student_pins_" + query.get("studentGroups"), JSON.stringify(data.content.map(s => s.idcode.toString())));
         resolve(data);
     });
 }
