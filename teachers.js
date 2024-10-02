@@ -732,6 +732,49 @@ console.log = GM_log;
         }, 50)
     }
     //#endregion
+
+    
+    //#region XHR intercept to avoid duplicate requests in some cases
+    let xhrInterceptors = {}; // key is url, value is function
+
+    function addXHRInterceptor(url, callback) {
+        xhrInterceptors[url] = callback;
+    }
+    
+    // Store the original open and send methods
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    // Override the open method to capture the request URL
+    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+        this._requestURL = url;  // Store the request URL for later use
+        this._requestMethod = method; // Optionally store the method too (GET, POST, etc.)
+
+        // Call the original open method
+        return originalOpen.apply(this, arguments);
+    };
+
+    // Override the send method to intercept the request and access the stored URL
+    XMLHttpRequest.prototype.send = function(body) {
+        const xhrInstance = this;
+
+        // Add an event listener to capture the response after the request completes
+        this.addEventListener('readystatechange', function() {
+            if (xhrInstance.readyState === XMLHttpRequest.DONE) {
+                console.log('XHR Intercepted:');
+                console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
+                console.log('Response Status:', xhrInstance.status);
+                console.log('Response Body:', xhrInstance.responseText);
+                if (xhrInterceptors[xhrInstance._requestURL]) {
+                    xhrInterceptors[xhrInstance._requestURL](xhrInstance.responseText);
+                }
+            }
+        });
+
+        // Call the original send method, preserving any existing logic
+        return originalSend.apply(this, arguments);
+    };
+    //#endregion
 })();
 
 const groupDuration = {
