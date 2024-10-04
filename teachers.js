@@ -709,7 +709,7 @@ console.log = GM_log;
         let date = new Date(year, 7, 1)
 
         // checkboxes in order, 1 for checked, 0 for unchecked
-        let rjaEntryTypes = [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+        let rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         // loop to remove checkmarks from disabled checkboxes after they are enabled from the previous run
         for (let i = 0; i < 4; i++) {
             document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
@@ -733,20 +733,20 @@ console.log = GM_log;
     }
     //#endregion
 
-    
+
     //#region XHR intercept to avoid duplicate requests in some cases
     let xhrInterceptors = {}; // key is url, value is function
 
     function addXHRInterceptor(url, callback) {
         xhrInterceptors[url] = callback;
     }
-    
+
     // Store the original open and send methods
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
 
     // Override the open method to capture the request URL
-    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+    XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
         this._requestURL = url;  // Store the request URL for later use
         this._requestMethod = method; // Optionally store the method too (GET, POST, etc.)
 
@@ -755,11 +755,11 @@ console.log = GM_log;
     };
 
     // Override the send method to intercept the request and access the stored URL
-    XMLHttpRequest.prototype.send = function(body) {
+    XMLHttpRequest.prototype.send = function (body) {
         const xhrInstance = this;
 
         // Add an event listener to capture the response after the request completes
-        this.addEventListener('readystatechange', function() {
+        this.addEventListener('readystatechange', function () {
             if (xhrInstance.readyState === XMLHttpRequest.DONE) {
                 console.log('XHR Intercepted:');
                 console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
