@@ -15,20 +15,27 @@
  *  - Voldi IDE-s kõik kommentaari regioonid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
  *  - Kood algab mutation observeriga, iga kord kui leht muutub käivitatakse skript uuesti vastavalt aadressile ja sisule.
  *    See osa asub `#region Entry point to scripts and MutationObserver config` -> fn `observeTargetChange`
- *    Olen pannud skiptidele "kood on käivitatud" markerid atribuutidena HTMLis, et vältida mitmekordset rakendamist.
- *  - Sealt edasi saad `Ctrl+Mouse Left Button` funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonid ja nende kirjeldused
+ *    Olen pannud igale feature'le HTML atribuutidena markeri, et kood on juba käivitatud vältimaks mitmekordset rakendamist.
+ *  - Sealt edasi saad `Go to Definition` (Ctrl+Mouse Left Button) abil funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonaalsuse ja nende kirjeldused
  *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
  *  - Kõige põhjas (faili lõpus) on re-usable asjad
  */
 
 
 // Features:
-// - Päevikus näeb õpilase keskmist hinnet
+// - Päevikus näeb õpilase keskmist hinnet (kui lisad perioodihinde)
+// - Päevikus saab kõik õpilased korraga puudujaks märkida
 // - Päevikus näitab aktiivset rida paksema piirjoonega
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
-// - TODO Päevikus saab peita õpilaste hinnete ajaloo
+// - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
+// - TODO Päevikute nimekirjas on tänased päevikud kõige ees
+// https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/14?from=2024-08-26T00:00:00Z&lang=ET&teachers=11359&thru=2025-08-24T00:00:00Z
+// - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
+// - TODO Päevik näitab varasema tunniplaani põhjal kas mõni tund on sisestamata jäänud
 // - TODO Päevikus saab hinde peale klikkides ühe hinde ära muuta
+// - TODO Päevikus saab peita õpilaste hinnete ajaloo
+// - TODO Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli
 
 console.log = GM_log;
 
@@ -115,7 +122,7 @@ console.log = GM_log;
             let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
             let tableRows = table.querySelectorAll("tbody tr");
             if (table && tableRows.length > 5 && !isAlreadyApplied(table)) {
-                filterForInOrderOfPassing(table, studentId);
+                negativeResultsToolsInStudentProfile(table, studentId);
                 addAppliedMarker(table);
             }
 
@@ -589,8 +596,8 @@ console.log = GM_log;
     }
     //#endregion
 
-    //#region Sooritamise järjekorras aruande filtrid + neg. hinnete arv
-    function filterForInOrderOfPassing(table, studentId) {
+    //#region Õpilase profiilil "Sooritamise järjekorras" vahekaardil filtrid + neg. hinnete arv
+    function negativeResultsToolsInStudentProfile(table, studentId) {
         const tableHeaders = table.querySelectorAll("thead th");
         const tableRows = table.querySelectorAll("tbody tr");
 
@@ -735,10 +742,13 @@ console.log = GM_log;
 
 
     //#region XHR intercept to avoid duplicate requests in some cases
-    let xhrInterceptors = {}; // key is url, value is function
-
-    function addXHRInterceptor(url, callback) {
-        xhrInterceptors[url] = callback;
+    let xhrInterceptors = [];
+    /**
+     * @param {function(url:string):boolean} filterFn
+     * @param {function(data:any):void} callback
+     */
+    function addXHRInterceptor(filterFn, callback) {
+        xhrInterceptors.push({ filterFn, callback });
     }
 
     // Store the original open and send methods
@@ -765,15 +775,43 @@ console.log = GM_log;
                 console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
                 console.log('Response Status:', xhrInstance.status);
                 console.log('Response Body:', xhrInstance.responseText);
-                if (xhrInterceptors[xhrInstance._requestURL]) {
-                    xhrInterceptors[xhrInstance._requestURL](xhrInstance.responseText);
-                }
+
+                xhrInterceptors.forEach(interceptor => {
+                    if (interceptor.filterFn(xhrInstance._requestURL)) {
+                        try {
+                            interceptor.callback(JSON.parse(xhrInstance.responseText));
+                        } catch (e) {
+                            interceptor.callback(xhrInstance.responseText);
+                        }
+                    }
+                });
             }
         });
 
         // Call the original send method, preserving any existing logic
         return originalSend.apply(this, arguments);
     };
+    //#endregion
+
+    //#region XHR interceptors
+    // Detect current logged in user and get necessary id's and store them in localstorage
+    addXHRInterceptor(url => url.includes("hois_back/changeUser") || url.includes("hois_back/user"), data => {
+        console.log("currentTeacherId:", data.teacher);
+        if (data?.teacher) {
+            localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
+        }
+        if (data?.school?.id) {
+            localStorage.setItem("schoolId", JSON.stringify(data.school.id));
+        }
+        // Collecting userscript usage statistics, once an hour
+        if (data?.name || data?.fullname) {
+            let lastUsage = localStorage.getItem("lastUsage");
+            if (!lastUsage || Date.now() - lastUsage > 3600000) {
+                localStorage.setItem("lastUsage", Date.now());
+                //fetch("https://api.countapi.xyz/hit/tahvel-userscripts/" + data.?name + "_" + data.?fullname);
+            }
+        }
+    });
     //#endregion
 })();
 
