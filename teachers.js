@@ -31,8 +31,7 @@
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
 // - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
-// - TODO Päevikute nimekirjas on tänased päevikud kõige ees
-// https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/14?from=2024-08-26T00:00:00Z&lang=ET&teachers=11359&thru=2025-08-24T00:00:00Z
+// - Päevikute nimekirjas on tänased päevikud kõige ees
 // - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
 // - TODO Päevik näitab varasema tunniplaani põhjal kas mõni tund on sisestamata jäänud
 // - TODO Päevikus saab hinde peale klikkides ühe hinde ära muuta
@@ -161,6 +160,17 @@ if (typeof GM_log === 'function')
                     option.addEventListener("click", updateRJAParameters);
                 });
                 addAppliedMarker(groupSelectOptions[0]);
+            }
+        }
+
+        // Päevikute nimekirjas on tänased päevikud kõige ees
+        if (window.location.href.indexOf("#/journals?_menu") > -1) {
+            let myJournals = document.querySelector("#main-content > div:nth-of-type(2)");
+            if (myJournals && !isAlreadyApplied(myJournals)) {
+                console.log("In journals list, add today's journals first")
+                myJournals = addMyJournals();
+                if (myJournals)
+                    addAppliedMarker(myJournals);
             }
         }
     });
@@ -854,6 +864,64 @@ if (typeof GM_log === 'function')
     }
     //#endregion
 
+    //#region Päeviku nimekirja vaate täiendused
+    function addMyJournals() {
+        const schoolId = 14;
+        const teacherId = JSON.parse(localStorage.getItem("currentTeacherId"));
+        if (!teacherId && !document.querySelector("#main-content")) {
+            return null;
+        }
+        let mainContent = document.querySelector("#main-content");
+        let myJournals = document.createElement("div");
+        myJournals.classList.add("layout-padding");
+        let label = document.createElement("label");
+        label.textContent = "Tänased tunnid";
+        label.classList.add("md-title-small");
+        myJournals.appendChild(label);
+
+        // prepare start and end dates for this week, from monday to sunday
+        let today = new Date();
+        //today = new Date("2024-11-07"); // for mockup
+        let todayStr = today.toISOString().split('T')[0];
+
+        let day = today.getDay();
+        let diff = today.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
+        // format the dates to yyyy-mm-ddT00:00:00Z
+        let monday = new Date(today.setDate(diff)).toISOString().split('T')[0] + "T00:00:00Z";
+        let sunday = new Date(today.setDate(diff + 6)).toISOString().split('T')[0] + "T00:00:00Z";
+
+        // Query this week timetable
+        fetch(`https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`, {
+            headers: {
+                "accept": "application/json",
+            }
+        }).then(r => r.json()).then(timetable => {
+            let alreadyAdded = [];
+            timetable.timetableEvents.filter(te => te.journalId && te.date.startsWith(todayStr)).forEach(te => {
+                // Filter out events that are today, skip duplicates
+                if (alreadyAdded.includes(te.journalId)) {
+                    return;
+                }
+                alreadyAdded.push(te.journalId);
+
+                // Add a link to the journal
+                let room = te.rooms.length > 0 ? te.rooms[0].roomCode : "";
+                let studentGroups = te.studentGroups.map(sg => sg.code).join(", ");
+
+                let journalLink = document.createElement("a");
+                journalLink.href = `#/journal/${te.journalId}/edit`;
+                //journalLink.target = "_blank";
+                journalLink.textContent = te.nameEt + " " + room + " " + studentGroups;
+                journalLink.style.paddingBottom = "5px";
+                journalLink.style.display = "block";
+                myJournals.appendChild(journalLink);
+            });
+        });
+
+        mainContent.firstChild.after(myJournals);
+        return myJournals;
+    }
+    //#endregion
 
     //#region XHR intercept to avoid duplicate requests in some cases
     let xhrInterceptors = [];
