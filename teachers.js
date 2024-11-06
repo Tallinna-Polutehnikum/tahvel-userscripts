@@ -23,9 +23,10 @@
 
 
 // Features:
-// - Päevikus näeb õpilase keskmist hinnet (kui lisad perioodihinde)
+// - Päevikus näeb õpilase keskmist hinnet (nüüd ka ilma perioodihindeta)
 // - Päevikus saab kõik õpilased korraga puudujaks märkida
 // - Päevikus näitab aktiivset rida paksema piirjoonega
+// - Päevikus kande taustavärv rakendub tervele veerule
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
@@ -91,6 +92,7 @@ if (typeof GM_log === 'function')
                 console.log("In journal, add average grade column")
                 addAverageGradeColumn();
                 journalEntryTooltips();
+                columnBackgroundColors();
                 addAppliedMarker(journalTableRows[1]);
             }
 
@@ -242,10 +244,21 @@ if (typeof GM_log === 'function')
         });
 
         // Get the indexes of the Perioodi hinne columns
-        const periodGradeColumnIndices = Array.from(periodGradeHeaders).map(header => {
+        let periodGradeColumnIndices = Array.from(periodGradeHeaders).map(header => {
             const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
             return columnIndex;
         });
+        let usedFinalGradeAsPeriodGrade = false;
+        if (periodGradeColumnIndices.length === 0) {
+            if (finalGradeHeader) {
+                periodGradeColumnIndices = [finalGradeHeader.cellIndex];
+                usedFinalGradeAsPeriodGrade = true;
+            } else {
+                periodGradeColumnIndices = [document.querySelectorAll('.journalTable thead th').length - 1];
+                usedFinalGradeAsPeriodGrade = true;
+            }
+        }
+        console.log("Period grade columns", periodGradeColumnIndices);
 
         // Get all the rows in the table
         const rows = document.querySelectorAll('.journalTable tr');
@@ -274,7 +287,7 @@ if (typeof GM_log === 'function')
             headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
         }
 
-        if (finalGradeHeader) {
+        if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
             const periodGradesHeader = document.createElement('th');
             periodGradesHeader.textContent = 'Perioodide hinded';
             periodGradesHeader.setAttribute('aria-label', 'Perioodide hinded');
@@ -363,7 +376,7 @@ if (typeof GM_log === 'function')
             }
 
             // Create the column cell for period 
-            if (finalGradeHeader) {
+            if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
                 const periodGradeCell = document.createElement('td');
                 periodGradeCell.style.padding = '0 2px';
                 periodGradeCell.textContent = periodGrades?.join(" / ") ?? '';
@@ -393,6 +406,21 @@ if (typeof GM_log === 'function')
                 totalColumn.style.backgroundColor = color || '#fff';
             });
         }
+    }
+
+    function columnBackgroundColors() {
+        let coloredColumns = {};
+        [...document.querySelectorAll(".journalTable thead th.bordered")]
+            .filter(h => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);"))
+            .forEach(h => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0])
+
+        Object.entries(coloredColumns).forEach(([columnIndex, bg]) => {
+            document.querySelectorAll(`.journalTable tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach(td => {
+                const rgbValues = bg.match(/\d+/g).map(Number);
+                let alpha = Math.min(...rgbValues) < 120 ? 0.2 : 0.5;
+                td.style.background = `rgba(${rgbValues[0]}, ${rgbValues[1]}, ${rgbValues[2]}, ${alpha})`;
+            });
+        });
     }
     //#endregion
 
