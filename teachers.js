@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.7
+// @version      1.2.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -29,15 +29,16 @@
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
+// - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
 // - TODO Päevikute nimekirjas on tänased päevikud kõige ees
 // https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/14?from=2024-08-26T00:00:00Z&lang=ET&teachers=11359&thru=2025-08-24T00:00:00Z
 // - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
 // - TODO Päevik näitab varasema tunniplaani põhjal kas mõni tund on sisestamata jäänud
 // - TODO Päevikus saab hinde peale klikkides ühe hinde ära muuta
 // - TODO Päevikus saab peita õpilaste hinnete ajaloo
-// - TODO Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli
 
-console.log = GM_log;
+if (typeof GM_log === 'function')
+    console.log = GM_log;
 
 (function () {
     'use strict';
@@ -66,6 +67,10 @@ console.log = GM_log;
         }
     `;
     document.head.appendChild(style);
+
+    // Some global variables assigned through XHR interceptors. These variables are not cleaned between dynamic view changes.
+    // If possible validate the data before using it. For example, the studentId in the URL should match the currentStudent.id
+    let currentStudent = null;
 
     //#region Entry point to scripts and MutationObserver config
 
@@ -117,6 +122,7 @@ console.log = GM_log;
         }
 
         // Sooritamise järjekorras aruande filtrid + neg. hinnete arv
+        // Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
         let studentId = window.location.href.match(/students\/(\d+)/)?.[1];
         if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Sooritamise järjekorras']`)) {
             let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
@@ -126,6 +132,15 @@ console.log = GM_log;
                 addAppliedMarker(table);
             }
 
+        }
+
+        // Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+        if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Õppekava täitmine']`)) {
+            let firstModule = document.querySelector(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
+            if (firstModule && !isAlreadyApplied(firstModule)) {
+                if (studentProfileModuleAndJournalLinks(studentId))
+                    addAppliedMarker(firstModule);
+            };
         }
 
         // Update Rühmajuhendaja aruanne parameters after group selection
@@ -704,6 +719,77 @@ console.log = GM_log;
     }
     //#endregion
 
+    //#region Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+    /**
+     * @param {*} studentId 
+     * @returns boolean True if the student is the current student and the links were added
+     */
+    function studentProfileModuleAndJournalLinks(studentId) {
+        console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
+        if (currentStudent?.id != studentId) {
+            return false;
+        }
+
+        const groupId = currentStudent?.curriculumVersion?.id;
+        const groupCode = currentStudent?.curriculumVersion?.code;
+        const modules = document.querySelectorAll(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
+        const journals = document.querySelectorAll(".hois-collapse-parent .secondary-table td:first-of-type > span");
+
+        // Query moduleProtocols
+        fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${groupId}&lang=ET&page=0&size=75`, {
+            headers: {
+                "accept": "application/json",
+            }
+        })
+            .then(r => r.json()).then(moduleProtocols => {
+                modules.forEach(module => {
+                    // remove last part of module name that is in brackets, search from the end of the string
+                    let moduleName = module.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+
+                    // find matching moduleProtocols and add a links
+                    moduleProtocols.content
+                        .filter(mp => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName)
+                        .forEach(mp => {
+                            // insert a tag with href=`https://tahvel.edu.ee/#/moduleProtocols/module/129756/edit`  ${m.id}?
+                            let moduleLink = document.createElement("a");
+                            moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
+                            moduleLink.target = "_blank";
+                            moduleLink.textContent = mp.id;
+                            moduleLink.style.paddingRight = "5px";
+                            module.appendChild(moduleLink);
+                        });
+                });
+            });
+
+        // Query journals
+        fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+            headers: {
+                "accept": "application/json",
+            }
+        }).then(r => r.json()).then(vocationalConnectedEntities => {
+            journals.forEach(journal => {
+                // remove last part of journal name that is in brackets, search from the end of the string
+                let journalName = journal.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+
+                // find matching journals and add a links
+                vocationalConnectedEntities
+                    .filter(e => e.type === "journal" && e.nameEt === journalName)
+                    .forEach(e => {
+                        // insert a tag with target="_blank" href=`https://tahvel.edu.ee/#/journal/${e.entityId}/edit`  content=e.entityId
+                        let journalLink = document.createElement("a");
+                        journalLink.href = `#/journal/${e.entityId}/edit`;
+                        journalLink.target = "_blank";
+                        journalLink.textContent = e.entityId;
+                        journalLink.style.paddingRight = "5px";
+                        journal.appendChild(journalLink);
+                    });
+            });
+        });
+
+        return true; // I don't need to wait for promises here, this avoids multiple requests when observer triggers multiple times before the promises are resolved
+    }
+    //#endregion
+
     //#region Rühmajuhendaja aruanne
     function updateRJAParameters(event) {
         let group = event.target.value;
@@ -771,10 +857,10 @@ console.log = GM_log;
         // Add an event listener to capture the response after the request completes
         this.addEventListener('readystatechange', function () {
             if (xhrInstance.readyState === XMLHttpRequest.DONE) {
-                console.log('XHR Intercepted:');
-                console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
-                console.log('Response Status:', xhrInstance.status);
-                console.log('Response Body:', xhrInstance.responseText);
+                //console.log('XHR Intercepted:');
+                //console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
+                //console.log('Response Status:', xhrInstance.status);
+                //console.log('Response Body:', xhrInstance.responseText);
 
                 xhrInterceptors.forEach(interceptor => {
                     if (interceptor.filterFn(xhrInstance._requestURL)) {
@@ -811,6 +897,11 @@ console.log = GM_log;
                 //fetch("https://api.countapi.xyz/hit/tahvel-userscripts/" + data.?name + "_" + data.?fullname);
             }
         }
+    });
+
+    // Get current student data, https://tahvel.edu.ee/hois_back/students/12345
+    addXHRInterceptor(url => url.match(/hois_back\/students\/\d+$/) !== null, data => {
+        currentStudent = data;
     });
     //#endregion
 })();
