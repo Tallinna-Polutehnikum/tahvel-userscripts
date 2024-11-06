@@ -897,7 +897,8 @@ if (typeof GM_log === 'function')
             }
         }).then(r => r.json()).then(timetable => {
             let alreadyAdded = [];
-            timetable.timetableEvents.filter(te => te.journalId && te.date.startsWith(todayStr)).forEach(te => {
+            let todaysEvents = timetable.timetableEvents.filter(te => te.journalId && te.date.startsWith(todayStr))
+            todaysEvents.forEach(te => {
                 // Filter out events that are today, skip duplicates
                 if (alreadyAdded.includes(te.journalId)) {
                     return;
@@ -916,6 +917,13 @@ if (typeof GM_log === 'function')
                 journalLink.style.display = "block";
                 myJournals.appendChild(journalLink);
             });
+
+            if (alreadyAdded.length === 0) {
+                let noEvents = document.createElement("i");
+                noEvents.textContent = "Tänaseid päevikuid ei leitud";
+                noEvents.style.display = "block";
+                myJournals.appendChild(noEvents);
+            }
         });
 
         mainContent.firstChild.after(myJournals);
