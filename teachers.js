@@ -338,7 +338,7 @@ if (typeof GM_log === 'function')
                 }
                 if (currentPeriodIndex < periodGradeColumnIndices.length) {
                     const gradeCell = row.querySelectorAll('td')[columnIndex];
-                    const gradeText = gradeCell?.textContent?.trim();
+                    const gradeText = gradeCell?.textContent?.trim() ?? "";
                     grades[currentPeriodIndex].push(gradeText);
                 }
             });
@@ -346,7 +346,7 @@ if (typeof GM_log === 'function')
             // Extract period grades
             periodGradeColumnIndices.forEach((columnIndex, index) => {
                 const gradeCell = row.querySelectorAll('td')[columnIndex];
-                const gradeText = gradeCell?.textContent?.trim();
+                const gradeText = gradeCell?.textContent?.trim() ?? "";
                 periodGrades.push(gradeText.trim().split('/').pop().trim());
             });
 
