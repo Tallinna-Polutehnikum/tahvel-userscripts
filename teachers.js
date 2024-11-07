@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -338,7 +338,7 @@ if (typeof GM_log === 'function')
                 }
                 if (currentPeriodIndex < periodGradeColumnIndices.length) {
                     const gradeCell = row.querySelectorAll('td')[columnIndex];
-                    const gradeText = gradeCell.textContent.trim();
+                    const gradeText = gradeCell?.textContent?.trim();
                     grades[currentPeriodIndex].push(gradeText);
                 }
             });
@@ -346,7 +346,7 @@ if (typeof GM_log === 'function')
             // Extract period grades
             periodGradeColumnIndices.forEach((columnIndex, index) => {
                 const gradeCell = row.querySelectorAll('td')[columnIndex];
-                const gradeText = gradeCell.textContent.trim();
+                const gradeText = gradeCell?.textContent?.trim();
                 periodGrades.push(gradeText.trim().split('/').pop().trim());
             });
 
