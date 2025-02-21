@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.1
+// @version      1.2.2
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -137,7 +137,7 @@ if (typeof GM_log === 'function')
 
         // Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
         if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Õppekava täitmine']`)) {
-            let firstModule = document.querySelector(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
+            let firstModule = document.querySelector(".hois-collapse-parent div:first-of-type > span");
             if (firstModule && !isAlreadyApplied(firstModule)) {
                 if (studentProfileModuleAndJournalLinks(studentId))
                     addAppliedMarker(firstModule);
@@ -770,8 +770,8 @@ if (typeof GM_log === 'function')
 
         const groupId = currentStudent?.curriculumVersion?.id;
         const groupCode = currentStudent?.curriculumVersion?.code;
-        const modules = document.querySelectorAll(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
-        const journals = document.querySelectorAll(".hois-collapse-parent .secondary-table td:first-of-type > span");
+        const modules = document.querySelectorAll(".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span");
+        const journals = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
 
         // Query moduleProtocols
         fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${groupId}&lang=ET&page=0&size=75`, {
@@ -794,6 +794,9 @@ if (typeof GM_log === 'function')
                             moduleLink.target = "_blank";
                             moduleLink.textContent = mp.id;
                             moduleLink.style.paddingRight = "5px";
+                            moduleLink.style.fontWeight = "bold";
+                            moduleLink.style.color = "var(--color-new-primary-blue-1)";
+                            moduleLink.style.textDecoration = "none";
                             module.appendChild(moduleLink);
                         });
                 });
@@ -839,8 +842,17 @@ if (typeof GM_log === 'function')
         let year = parseInt(group.match(/\d+/)[0]) + 2000
         let date = new Date(year, 7, 1)
 
+        // get 31 of december of previous year, for õppetoetus (manually enable) TODO needs improvement in september
+        let oppetoetus = false
+        let previousPeriodYear = new Date().getFullYear() - 1
+        let endDate = new Date(previousPeriodYear, 11, 31)
+
         // checkboxes in order, 1 for checked, 0 for unchecked
         let rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        // checkboxes for õppetoetus (manually enable)
+        if (oppetoetus) {
+            rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0]
+        }
         // loop to remove checkmarks from disabled checkboxes after they are enabled from the previous run
         for (let i = 0; i < 4; i++) {
             document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
@@ -856,11 +868,19 @@ if (typeof GM_log === 'function')
         let startDate = date.toLocaleDateString('et', { day: '2-digit', month: '2-digit', year: 'numeric' })
         simulateTyping(dateInput, startDate, 10, 10);
 
+        // for õppetoetus (manually enable)
+        if (oppetoetus) {
+            let dateInput2 = document.querySelector(`[ng-model="criteria.thru"] input`)
+            dateInput2.click();
+            dateInput2.value = ""
+            let endDateStr = endDate.toLocaleDateString('et', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            simulateTyping(dateInput2, endDateStr, 10, 10);
+        }
 
-        document.querySelector(`[aria-label="{{'report.studentGroupTeacher.studyYear' | translate}}"] md-option`).click()
+        document.querySelector(`[ng-model="criteria.studyYear"]`).click()
         setTimeout(() => {
-            document.querySelector(`[aria-label="{{'report.studentGroupTeacher.studyYear' | translate}}"] md-option`).click()
-        }, 50)
+            document.querySelector(`.md-select-menu-container.md-active.md-clickable md-option`).click()
+        }, 120)
     }
     //#endregion
 
