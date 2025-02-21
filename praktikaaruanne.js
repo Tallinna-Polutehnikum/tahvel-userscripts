@@ -28,9 +28,16 @@ const ContractStatus = {
     // TODO grades history database: student, subject, grade, date, teacher, etc
 
 
-    //importGroups("TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21".split(" "));
-    //importGroups("TA-19E TA-19V KTA-21E KTA-21V IT-19E IT-19V KIT-21E KIT-21V SA-20".split(" "));
-    //importGroups("TA-18E TA-18V KTA-20E KTA-20V IT-18E IT-18V KIT-20E KIT-20V SA-19".split(" "));
+    let ends2026 = [ "TA-22E", "TA-22V", "KTA-24E", "KTA-24V", "IT-22E", "IT-22V", "KIT-24E", "KIT-24V", "SA-23" ];
+    let ends2025 = [ "TA-21E", "TA-21V", "KTA-23E", "KTA-23V", "IT-21E", "IT-21V", "KIT-23E", "KIT-23V", "SA-22" ];
+    let ends2024 = [ "TA-20E", "TA-20V", "KTA-22E", "KTA-22V", "IT-20E", "IT-20V", "KIT-22E", "KIT-22V", "SA-21" ];
+    let ends2023 = [ "TA-19E", "TA-19V", "KTA-21E", "KTA-21V", "IT-19E", "IT-19V", "KIT-21E", "KIT-21V", "SA-20" ];
+    let ends2022 = [ "TA-18E", "TA-18V", "KTA-20E", "KTA-20V", "IT-18E", "IT-18V", "KIT-20E", "KIT-20V", "SA-19" ];
+    let allITgroups = [...ends2022, ...ends2023, ...ends2024, ...ends2025, ...ends2026];
+
+    //importGroups(allITgroups);
+    //updatePracticeReports(allITgroups);
+    //printFullReports(allITgroups);
 
     //updateGroupsMap(); // once a year
     //updatePracticeReports("TA-20E TA-20V KTA-22E KTA-22V IT-20E IT-20V KIT-22E KIT-22V SA-21".split(" "));
