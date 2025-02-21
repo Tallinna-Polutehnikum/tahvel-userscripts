@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.7
+// @version      1.2.1
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -15,22 +15,30 @@
  *  - Voldi IDE-s kõik kommentaari regioonid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
  *  - Kood algab mutation observeriga, iga kord kui leht muutub käivitatakse skript uuesti vastavalt aadressile ja sisule.
  *    See osa asub `#region Entry point to scripts and MutationObserver config` -> fn `observeTargetChange`
- *    Olen pannud skiptidele "kood on käivitatud" markerid atribuutidena HTMLis, et vältida mitmekordset rakendamist.
- *  - Sealt edasi saad `Ctrl+Mouse Left Button` funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonid ja nende kirjeldused
+ *    Olen pannud igale feature'le HTML atribuutidena markeri, et kood on juba käivitatud vältimaks mitmekordset rakendamist.
+ *  - Sealt edasi saad `Go to Definition` (Ctrl+Mouse Left Button) abil funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonaalsuse ja nende kirjeldused
  *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
  *  - Kõige põhjas (faili lõpus) on re-usable asjad
  */
 
 
 // Features:
-// - Päevikus näeb õpilase keskmist hinnet
+// - Päevikus näeb õpilase keskmist hinnet (nüüd ka ilma perioodihindeta)
+// - Päevikus saab kõik õpilased korraga puudujaks märkida
 // - Päevikus näitab aktiivset rida paksema piirjoonega
+// - Päevikus kande taustavärv rakendub tervele veerule
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
-// - TODO Päevikus saab peita õpilaste hinnete ajaloo
+// - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
+// - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+// - Päevikute nimekirjas on tänased päevikud kõige ees
+// - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
+// - TODO Päevik näitab varasema tunniplaani põhjal kas mõni tund on sisestamata jäänud
 // - TODO Päevikus saab hinde peale klikkides ühe hinde ära muuta
+// - TODO Päevikus saab peita õpilaste hinnete ajaloo
 
-console.log = GM_log;
+if (typeof GM_log === 'function')
+    console.log = GM_log;
 
 (function () {
     'use strict';
@@ -60,6 +68,10 @@ console.log = GM_log;
     `;
     document.head.appendChild(style);
 
+    // Some global variables assigned through XHR interceptors. These variables are not cleaned between dynamic view changes.
+    // If possible validate the data before using it. For example, the studentId in the URL should match the currentStudent.id
+    let currentStudent = null;
+
     //#region Entry point to scripts and MutationObserver config
 
     // Trigger when Angular app changes content
@@ -79,6 +91,7 @@ console.log = GM_log;
                 console.log("In journal, add average grade column")
                 addAverageGradeColumn();
                 journalEntryTooltips();
+                columnBackgroundColors();
                 addAppliedMarker(journalTableRows[1]);
             }
 
@@ -110,15 +123,25 @@ console.log = GM_log;
         }
 
         // Sooritamise järjekorras aruande filtrid + neg. hinnete arv
+        // Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
         let studentId = window.location.href.match(/students\/(\d+)/)?.[1];
         if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Sooritamise järjekorras']`)) {
             let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
             let tableRows = table.querySelectorAll("tbody tr");
             if (table && tableRows.length > 5 && !isAlreadyApplied(table)) {
-                filterForInOrderOfPassing(table, studentId);
+                negativeResultsToolsInStudentProfile(table, studentId);
                 addAppliedMarker(table);
             }
 
+        }
+
+        // Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+        if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Õppekava täitmine']`)) {
+            let firstModule = document.querySelector(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
+            if (firstModule && !isAlreadyApplied(firstModule)) {
+                if (studentProfileModuleAndJournalLinks(studentId))
+                    addAppliedMarker(firstModule);
+            };
         }
 
         // Update Rühmajuhendaja aruanne parameters after group selection
@@ -137,6 +160,17 @@ console.log = GM_log;
                     option.addEventListener("click", updateRJAParameters);
                 });
                 addAppliedMarker(groupSelectOptions[0]);
+            }
+        }
+
+        // Päevikute nimekirjas on tänased päevikud kõige ees
+        if (window.location.href.indexOf("#/journals?_menu") > -1) {
+            let myJournals = document.querySelector("#main-content > div:nth-of-type(2)");
+            if (myJournals && !isAlreadyApplied(myJournals)) {
+                console.log("In journals list, add today's journals first")
+                myJournals = addMyJournals();
+                if (myJournals)
+                    addAppliedMarker(myJournals);
             }
         }
     });
@@ -220,10 +254,21 @@ console.log = GM_log;
         });
 
         // Get the indexes of the Perioodi hinne columns
-        const periodGradeColumnIndices = Array.from(periodGradeHeaders).map(header => {
+        let periodGradeColumnIndices = Array.from(periodGradeHeaders).map(header => {
             const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
             return columnIndex;
         });
+        let usedFinalGradeAsPeriodGrade = false;
+        if (periodGradeColumnIndices.length === 0) {
+            if (finalGradeHeader) {
+                periodGradeColumnIndices = [finalGradeHeader.cellIndex];
+                usedFinalGradeAsPeriodGrade = true;
+            } else {
+                periodGradeColumnIndices = [document.querySelectorAll('.journalTable thead th').length - 1];
+                usedFinalGradeAsPeriodGrade = true;
+            }
+        }
+        console.log("Period grade columns", periodGradeColumnIndices);
 
         // Get all the rows in the table
         const rows = document.querySelectorAll('.journalTable tr');
@@ -252,7 +297,7 @@ console.log = GM_log;
             headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + (i * 2)]);
         }
 
-        if (finalGradeHeader) {
+        if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
             const periodGradesHeader = document.createElement('th');
             periodGradesHeader.textContent = 'Perioodide hinded';
             periodGradesHeader.setAttribute('aria-label', 'Perioodide hinded');
@@ -293,7 +338,7 @@ console.log = GM_log;
                 }
                 if (currentPeriodIndex < periodGradeColumnIndices.length) {
                     const gradeCell = row.querySelectorAll('td')[columnIndex];
-                    const gradeText = gradeCell.textContent.trim();
+                    const gradeText = gradeCell?.textContent?.trim() ?? "";
                     grades[currentPeriodIndex].push(gradeText);
                 }
             });
@@ -301,7 +346,7 @@ console.log = GM_log;
             // Extract period grades
             periodGradeColumnIndices.forEach((columnIndex, index) => {
                 const gradeCell = row.querySelectorAll('td')[columnIndex];
-                const gradeText = gradeCell.textContent.trim();
+                const gradeText = gradeCell?.textContent?.trim() ?? "";
                 periodGrades.push(gradeText.trim().split('/').pop().trim());
             });
 
@@ -341,7 +386,7 @@ console.log = GM_log;
             }
 
             // Create the column cell for period 
-            if (finalGradeHeader) {
+            if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
                 const periodGradeCell = document.createElement('td');
                 periodGradeCell.style.padding = '0 2px';
                 periodGradeCell.textContent = periodGrades?.join(" / ") ?? '';
@@ -371,6 +416,21 @@ console.log = GM_log;
                 totalColumn.style.backgroundColor = color || '#fff';
             });
         }
+    }
+
+    function columnBackgroundColors() {
+        let coloredColumns = {};
+        [...document.querySelectorAll(".journalTable thead th.bordered")]
+            .filter(h => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);"))
+            .forEach(h => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0])
+
+        Object.entries(coloredColumns).forEach(([columnIndex, bg]) => {
+            document.querySelectorAll(`.journalTable tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach(td => {
+                const rgbValues = bg.match(/\d+/g).map(Number);
+                let alpha = Math.min(...rgbValues) < 120 ? 0.2 : 0.5;
+                td.style.background = `rgba(${rgbValues[0]}, ${rgbValues[1]}, ${rgbValues[2]}, ${alpha})`;
+            });
+        });
     }
     //#endregion
 
@@ -589,8 +649,8 @@ console.log = GM_log;
     }
     //#endregion
 
-    //#region Sooritamise järjekorras aruande filtrid + neg. hinnete arv
-    function filterForInOrderOfPassing(table, studentId) {
+    //#region Õpilase profiilil "Sooritamise järjekorras" vahekaardil filtrid + neg. hinnete arv
+    function negativeResultsToolsInStudentProfile(table, studentId) {
         const tableHeaders = table.querySelectorAll("thead th");
         const tableRows = table.querySelectorAll("tbody tr");
 
@@ -697,6 +757,77 @@ console.log = GM_log;
     }
     //#endregion
 
+    //#region Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+    /**
+     * @param {*} studentId 
+     * @returns boolean True if the student is the current student and the links were added
+     */
+    function studentProfileModuleAndJournalLinks(studentId) {
+        console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
+        if (currentStudent?.id != studentId) {
+            return false;
+        }
+
+        const groupId = currentStudent?.curriculumVersion?.id;
+        const groupCode = currentStudent?.curriculumVersion?.code;
+        const modules = document.querySelectorAll(".hois-collapse-parent .curriculum-fulfillment-result > div:first-of-type > span");
+        const journals = document.querySelectorAll(".hois-collapse-parent .secondary-table td:first-of-type > span");
+
+        // Query moduleProtocols
+        fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${groupId}&lang=ET&page=0&size=75`, {
+            headers: {
+                "accept": "application/json",
+            }
+        })
+            .then(r => r.json()).then(moduleProtocols => {
+                modules.forEach(module => {
+                    // remove last part of module name that is in brackets, search from the end of the string
+                    let moduleName = module.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+
+                    // find matching moduleProtocols and add a links
+                    moduleProtocols.content
+                        .filter(mp => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName)
+                        .forEach(mp => {
+                            // insert a tag with href=`https://tahvel.edu.ee/#/moduleProtocols/module/129756/edit`  ${m.id}?
+                            let moduleLink = document.createElement("a");
+                            moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
+                            moduleLink.target = "_blank";
+                            moduleLink.textContent = mp.id;
+                            moduleLink.style.paddingRight = "5px";
+                            module.appendChild(moduleLink);
+                        });
+                });
+            });
+
+        // Query journals
+        fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+            headers: {
+                "accept": "application/json",
+            }
+        }).then(r => r.json()).then(vocationalConnectedEntities => {
+            journals.forEach(journal => {
+                // remove last part of journal name that is in brackets, search from the end of the string
+                let journalName = journal.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+
+                // find matching journals and add a links
+                vocationalConnectedEntities
+                    .filter(e => e.type === "journal" && e.nameEt === journalName)
+                    .forEach(e => {
+                        // insert a tag with target="_blank" href=`https://tahvel.edu.ee/#/journal/${e.entityId}/edit`  content=e.entityId
+                        let journalLink = document.createElement("a");
+                        journalLink.href = `#/journal/${e.entityId}/edit`;
+                        journalLink.target = "_blank";
+                        journalLink.textContent = e.entityId;
+                        journalLink.style.paddingRight = "5px";
+                        journal.appendChild(journalLink);
+                    });
+            });
+        });
+
+        return true; // I don't need to wait for promises here, this avoids multiple requests when observer triggers multiple times before the promises are resolved
+    }
+    //#endregion
+
     //#region Rühmajuhendaja aruanne
     function updateRJAParameters(event) {
         let group = event.target.value;
@@ -709,7 +840,7 @@ console.log = GM_log;
         let date = new Date(year, 7, 1)
 
         // checkboxes in order, 1 for checked, 0 for unchecked
-        let rjaEntryTypes = [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+        let rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         // loop to remove checkmarks from disabled checkboxes after they are enabled from the previous run
         for (let i = 0; i < 4; i++) {
             document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
@@ -731,6 +862,151 @@ console.log = GM_log;
             document.querySelector(`[aria-label="{{'report.studentGroupTeacher.studyYear' | translate}}"] md-option`).click()
         }, 50)
     }
+    //#endregion
+
+    //#region Päeviku nimekirja vaate täiendused
+    function addMyJournals() {
+        const schoolId = 14;
+        const teacherId = JSON.parse(localStorage.getItem("currentTeacherId"));
+        if (!teacherId && !document.querySelector("#main-content")) {
+            return null;
+        }
+        let mainContent = document.querySelector("#main-content");
+        let myJournals = document.createElement("div");
+        myJournals.classList.add("layout-padding");
+        let label = document.createElement("label");
+        label.textContent = "Tänased tunnid";
+        label.classList.add("md-title-small");
+        myJournals.appendChild(label);
+
+        // prepare start and end dates for this week, from monday to sunday
+        let today = new Date();
+        //today = new Date("2024-11-07"); // for mockup
+        let todayStr = today.toISOString().split('T')[0];
+
+        let day = today.getDay();
+        let diff = today.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
+        // format the dates to yyyy-mm-ddT00:00:00Z
+        let monday = new Date(today.setDate(diff)).toISOString().split('T')[0] + "T00:00:00Z";
+        let sunday = new Date(today.setDate(diff + 6)).toISOString().split('T')[0] + "T00:00:00Z";
+
+        // Query this week timetable
+        fetch(`https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`, {
+            headers: {
+                "accept": "application/json",
+            }
+        }).then(r => r.json()).then(timetable => {
+            let alreadyAdded = [];
+            let todaysEvents = timetable.timetableEvents.filter(te => te.journalId && te.date.startsWith(todayStr))
+            todaysEvents.forEach(te => {
+                // Filter out events that are today, skip duplicates
+                if (alreadyAdded.includes(te.journalId)) {
+                    return;
+                }
+                alreadyAdded.push(te.journalId);
+
+                // Add a link to the journal
+                let room = te.rooms.length > 0 ? te.rooms[0].roomCode : "";
+                let studentGroups = te.studentGroups.map(sg => sg.code).join(", ");
+
+                let journalLink = document.createElement("a");
+                journalLink.href = `#/journal/${te.journalId}/edit`;
+                //journalLink.target = "_blank";
+                journalLink.textContent = te.nameEt + " " + room + " " + studentGroups;
+                journalLink.style.paddingBottom = "5px";
+                journalLink.style.display = "block";
+                myJournals.appendChild(journalLink);
+            });
+
+            if (alreadyAdded.length === 0) {
+                let noEvents = document.createElement("i");
+                noEvents.textContent = "Tänaseid päevikuid ei leitud";
+                noEvents.style.display = "block";
+                myJournals.appendChild(noEvents);
+            }
+        });
+
+        mainContent.firstChild.after(myJournals);
+        return myJournals;
+    }
+    //#endregion
+
+    //#region XHR intercept to avoid duplicate requests in some cases
+    let xhrInterceptors = [];
+    /**
+     * @param {function(url:string):boolean} filterFn
+     * @param {function(data:any):void} callback
+     */
+    function addXHRInterceptor(filterFn, callback) {
+        xhrInterceptors.push({ filterFn, callback });
+    }
+
+    // Store the original open and send methods
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    // Override the open method to capture the request URL
+    XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
+        this._requestURL = url;  // Store the request URL for later use
+        this._requestMethod = method; // Optionally store the method too (GET, POST, etc.)
+
+        // Call the original open method
+        return originalOpen.apply(this, arguments);
+    };
+
+    // Override the send method to intercept the request and access the stored URL
+    XMLHttpRequest.prototype.send = function (body) {
+        const xhrInstance = this;
+
+        // Add an event listener to capture the response after the request completes
+        this.addEventListener('readystatechange', function () {
+            if (xhrInstance.readyState === XMLHttpRequest.DONE) {
+                //console.log('XHR Intercepted:');
+                //console.log('Request URL:', xhrInstance._requestURL);  // Access the stored URL
+                //console.log('Response Status:', xhrInstance.status);
+                //console.log('Response Body:', xhrInstance.responseText);
+
+                xhrInterceptors.forEach(interceptor => {
+                    if (interceptor.filterFn(xhrInstance._requestURL)) {
+                        try {
+                            interceptor.callback(JSON.parse(xhrInstance.responseText));
+                        } catch (e) {
+                            interceptor.callback(xhrInstance.responseText);
+                        }
+                    }
+                });
+            }
+        });
+
+        // Call the original send method, preserving any existing logic
+        return originalSend.apply(this, arguments);
+    };
+    //#endregion
+
+    //#region XHR interceptors
+    // Detect current logged in user and get necessary id's and store them in localstorage
+    addXHRInterceptor(url => url.includes("hois_back/changeUser") || url.includes("hois_back/user"), data => {
+        console.log("currentTeacherId:", data.teacher);
+        if (data?.teacher) {
+            localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
+        }
+        if (data?.school?.id) {
+            localStorage.setItem("schoolId", JSON.stringify(data.school.id));
+        }
+        // Collecting userscript usage statistics, once an hour
+        if (data?.name || data?.fullname) {
+            let lastUsage = localStorage.getItem("lastUsage");
+            if (!lastUsage || Date.now() - lastUsage > 3600000) {
+                localStorage.setItem("lastUsage", Date.now());
+                //fetch("https://api.countapi.xyz/hit/tahvel-userscripts/" + data.?name + "_" + data.?fullname);
+            }
+        }
+    });
+
+    // Get current student data, https://tahvel.edu.ee/hois_back/students/12345
+    addXHRInterceptor(url => url.match(/hois_back\/students\/\d+$/) !== null, data => {
+        currentStudent = data;
+    });
     //#endregion
 })();
 
