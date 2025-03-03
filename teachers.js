@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.2
+// @version      1.2.3
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -28,7 +28,8 @@
 // - Päevikus näitab aktiivset rida paksema piirjoonega
 // - Päevikus kande taustavärv rakendub tervele veerule
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
-// - Rühmajuhendaja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
+// - Rühmajuhataja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
+// - Rühmajuhataja aruandes saab JSON formaadis alla laadida, et pingeread koostada (töös, vajab täiendamist)
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
 // - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
 // - Päevikute nimekirjas on tänased päevikud kõige ees
@@ -43,6 +44,9 @@ if (typeof GM_log === 'function')
 (function () {
     'use strict';
     console.log("Tahvel Customization script started");
+
+    // get 31 of december of previous year, for õppetoetus (manually enable) TODO needs improvement in september
+    let oppetoetus = false; // Will change class-teacher (rühmajuhataja) raport to get previous semester data needed for grant, this is WIP and needs programmer attention
 
     //#region Angular hooking WIP
     /*setTimeout(() => {
@@ -843,7 +847,6 @@ if (typeof GM_log === 'function')
         let date = new Date(year, 7, 1)
 
         // get 31 of december of previous year, for õppetoetus (manually enable) TODO needs improvement in september
-        let oppetoetus = false
         let previousPeriodYear = new Date().getFullYear() - 1
         let endDate = new Date(previousPeriodYear, 11, 31)
 
@@ -1022,6 +1025,17 @@ if (typeof GM_log === 'function')
             }
         }
     });
+
+    // Download class-teacher raport for grants as a JSON
+    if (oppetoetus) {
+        addXHRInterceptor(url => url.includes("hois_back/reports/studentgroupteacher"), data => {
+            let a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+            let fileName = document.querySelector('[aria-label="Õpperühm"]').value ?? "class-teacher-report";
+            a.download = `${fileName}.json`;
+            a.click();
+        });
+    }
 
     // Get current student data, https://tahvel.edu.ee/hois_back/students/12345
     addXHRInterceptor(url => url.match(/hois_back\/students\/\d+$/) !== null, data => {
