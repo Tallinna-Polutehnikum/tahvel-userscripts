@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.3
+// @version      1.2.4
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -30,9 +30,11 @@
 // - Õpilaste nimekirjas näitab õpilase vanust isikukoodi kõrval
 // - Rühmajuhataja aruandes täidab õppeaasta ja kuupäeva vastvalt rühma koodile automaatselt
 // - Rühmajuhataja aruandes saab JSON formaadis alla laadida, et pingeread koostada (töös, vajab täiendamist)
+// - Rühmajuhataja aruandes toob koondandmed tabeli ette, lisab negatiivsed hinded
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
 // - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
 // - Päevikute nimekirjas on tänased päevikud kõige ees
+// - TODO Rühmajuhataja aruandes saaks printida PDFi ainult võlgenvustest millel pole päevikus positiivset lõpphinnet
 // - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
 // - TODO Päevik näitab varasema tunniplaani põhjal kas mõni tund on sisestamata jäänud
 // - TODO Päevikus saab hinde peale klikkides ühe hinde ära muuta
@@ -65,9 +67,16 @@ if (typeof GM_log === 'function')
     // Inject CSS
     const style = document.createElement('style');
     style.textContent = `
-    /* Hinnete dropdown oleks pikem*/
-    md-select-menu, md-select-menu md-content {
+        /* Hinnete dropdown oleks pikem*/
+        md-select-menu, md-select-menu md-content {
             max-height: 300px;
+        }
+        /* rühmajuhataja aruande tabelis nimed scrolliks kaasa */
+        .student-group-teacher-table tbody td:nth-child(2) {
+            position: sticky;
+            left: 0;
+            background: white; /* Prevents content from being hidden under scrolling elements */
+            z-index: 2; /* Ensures it stays above other cells */
         }
     `;
     document.head.appendChild(style);
@@ -75,6 +84,7 @@ if (typeof GM_log === 'function')
     // Some global variables assigned through XHR interceptors. These variables are not cleaned between dynamic view changes.
     // If possible validate the data before using it. For example, the studentId in the URL should match the currentStudent.id
     let currentStudent = null;
+    let currentClassTeacherReport = null;
 
     //#region Entry point to scripts and MutationObserver config
 
@@ -148,15 +158,16 @@ if (typeof GM_log === 'function')
             };
         }
 
-        // Update Rühmajuhendaja aruanne parameters after group selection
+        // Rühmajuhataja aruande täiendused
         if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
+            // Update Rühmajuhendaja aruanne parameters after group selection
             let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="Õpperühm"] input`);
             if (groupSelect && !isAlreadyApplied(groupSelect)) {
                 console.log("In Rühmajuhendaja aruanne, update parameters after group selection")
                 groupSelect.addEventListener("change", updateRJAParameters);
                 addAppliedMarker(groupSelect);
             }
-            // Teachers have different UI for group selection
+            // Same as previous, but teachers have different UI for group selection
             let groupSelectOptions = [...document.querySelectorAll(`md-option[ng-value="studentGroup"]`)];
             if (groupSelectOptions.length && !isAlreadyApplied(groupSelectOptions[0])) {
                 console.log("In Rühmajuhendaja aruanne, update parameters after group selection")
@@ -164,6 +175,16 @@ if (typeof GM_log === 'function')
                     option.addEventListener("click", updateRJAParameters);
                 });
                 addAppliedMarker(groupSelectOptions[0]);
+            }
+
+            // Rühmajuhataja aruandes toob koondandmed tabeli ette, lisab negatiivsed hinded
+            let table = document.querySelector(".student-group-teacher-table");
+            // Wait until tabel is loaded, check by body row count and check if last header column is "Hilinemisi"
+            let isTableLoaded = table && table.querySelector("tbody tr:first-child td:nth-child(2) span:not([class])");
+            if (isTableLoaded && !isAlreadyApplied(table)) {
+                console.log("In Rühmajuhendaja aruanne, add summary data to table")
+                addSummaryDataToRJA(table);
+                addAppliedMarker(table);
             }
         }
 
@@ -887,6 +908,114 @@ if (typeof GM_log === 'function')
     }
     //#endregion
 
+    //#region Rühmajuhataja aruandes toob koondandmed tabeli ette, lisab negatiivsed hinded
+    function addSummaryDataToRJA(table) {
+        // Prepare negative grade data to be inserted into the table
+        const newColumnsToBeAdded = 6;
+        const periodGradeClassifier = "R";
+        const finalGradeClassifier = "L";
+        let studentGradesMap = new Map();
+        currentClassTeacherReport.students.forEach((student) => {
+            let totalFinalGrades = 0;
+            let totalPeriodGrades = 0;
+            let negativeFinalGrades = 0;
+            let negativePeriodGrades = 0;
+            student.resultColumns.forEach((resultColumn) => {
+                let fresult = resultColumn?.journalResult?.results
+                if (fresult?.length) {
+                    fresult.forEach((result) => {
+                        if (result.entryType.endsWith(periodGradeClassifier)) {
+                            if (result.grade.code.endsWith("MA") || result.grade.code.endsWith("X") || result.grade.code.endsWith("1") || result.grade.code.endsWith("2")) {
+                                negativeFinalGrades++;
+                            }
+                            totalFinalGrades++;
+                        } else if (result.entryType.endsWith(finalGradeClassifier)) {
+                            if (result.grade.code.endsWith("MA") || result.grade.code.endsWith("X") || result.grade.code.endsWith("1") || result.grade.code.endsWith("2")) {
+                                negativePeriodGrades++;
+                            }
+                            totalPeriodGrades++;
+                        }
+                    })
+                }
+            });
+            studentGradesMap.set(student.fullname, {
+                totalPeriodGrades, negativePeriodGrades,
+                totalFinalGrades, negativeFinalGrades,
+            });
+        });
+
+        // Site has 3 rows inside thead, I want to select the last column of every row in thead. On the thrid row, get last x th elements, based on first row colspan number
+        table = document.querySelector(".student-group-teacher-table");
+        const columnDataOffset = 2;
+        let headerRows = table.querySelectorAll("thead tr");
+        let headerSummaryColumn = headerRows[0].querySelector("th:last-child");
+        let headerSummaryColumn2 = headerRows[1].querySelector("th:last-child");
+        let colspan = parseInt(headerSummaryColumn.getAttribute("colspan"));
+        let headerCells = headerRows[2].querySelectorAll("th");
+        let lastCells = Array.from(headerCells).slice(-colspan);
+        let lastCellIndex = Array.from(headerCells).indexOf(lastCells[0]);
+
+        // Move last 7 cells to the beginning of the table based on lastCellIndex, after 2 column, both for header and body
+        // Notice that first two rows in thead are merged using colspan
+        headerRows[0].insertBefore(headerSummaryColumn, headerRows[0].children[1]);
+        headerRows[1].insertBefore(headerSummaryColumn2, headerRows[1].children[1]);
+
+        let bodyRows = table.querySelectorAll("tbody tr");
+        lastCells.forEach((cell, ci) => {
+            headerRows[2].insertBefore(cell, headerRows[columnDataOffset].children[columnDataOffset + ci]);
+            bodyRows.forEach(row => {
+                row.insertBefore(row.children[lastCellIndex + ci], row.children[columnDataOffset + ci]);
+            });
+        });
+
+        // Add negative grade count and percentage columns to the summary
+        bodyRows.forEach(row => {
+            let studentName = row.children[columnDataOffset - 1]?.querySelector("span:not([class]):not([ng-if])")?.textContent.trim();
+            if (studentGradesMap.has(studentName)) {
+                const { totalPeriodGrades, negativePeriodGrades, totalFinalGrades, negativeFinalGrades } = studentGradesMap.get(studentName);
+                let negativePeriodGradeCell = document.createElement("td");
+                negativePeriodGradeCell.textContent = negativePeriodGrades;
+                let negativePeriodGradePercentageCell = document.createElement("td");
+                negativePeriodGradePercentageCell.textContent = (negativePeriodGrades / totalPeriodGrades * 100).toFixed(1) + "%";
+                let negativeFinalGradeCell = document.createElement("td");
+                negativeFinalGradeCell.textContent = negativeFinalGrades;
+                let negativeFinalGradePercentageCell = document.createElement("td");
+                let percentage = negativeFinalGrades / totalFinalGrades * 100;
+                negativeFinalGradePercentageCell.textContent = percentage.toFixed(1) + "%";
+                // set color based on percentage, 0 green, 0-10 yellow, 10-30 orange, 30+ red white text, 50+ black bg white text
+                negativeFinalGradePercentageCell.style.backgroundColor = 
+                    percentage > 50 ? "black" : 
+                    percentage > 30 ? "#ff3333" : 
+                    percentage > 10 ? "orange" : 
+                    percentage > 0 ? "yellow" : 
+                    "#92D293";
+                negativeFinalGradePercentageCell.style.color = percentage > 30 ? "white" : "black";
+                row.insertBefore(negativeFinalGradePercentageCell, row.children[columnDataOffset + colspan]);
+                row.insertBefore(negativeFinalGradeCell, row.children[columnDataOffset + colspan]);
+                row.insertBefore(negativePeriodGradePercentageCell, row.children[columnDataOffset + colspan]);
+                row.insertBefore(negativePeriodGradeCell, row.children[columnDataOffset + colspan]);
+            }
+        });
+
+        // Update summary header colspans
+        headerSummaryColumn.setAttribute("colspan", colspan + newColumnsToBeAdded);
+        headerSummaryColumn2.setAttribute("colspan", colspan + newColumnsToBeAdded);
+        // Insert new header cells
+        let negativePeriodGradeHeader = document.createElement("th");
+        negativePeriodGradeHeader.textContent = "Neg. perioodi hinded";
+        let negativePeriodGradePercentageHeader = document.createElement("th");
+        negativePeriodGradePercentageHeader.textContent = "Neg. perioodi %";
+        let negativeFinalGradeHeader = document.createElement("th");
+        negativeFinalGradeHeader.textContent = "Neg. lõpuhinded";
+        let negativeFinalGradePercentageHeader = document.createElement("th");
+        negativeFinalGradePercentageHeader.textContent = "Neg. lõpuhinde %";
+        headerRows[2].insertBefore(negativeFinalGradePercentageHeader, headerRows[2].children[columnDataOffset + colspan]);
+        headerRows[2].insertBefore(negativeFinalGradeHeader, headerRows[2].children[columnDataOffset + colspan]);
+        headerRows[2].insertBefore(negativePeriodGradePercentageHeader, headerRows[2].children[columnDataOffset + colspan]);
+        headerRows[2].insertBefore(negativePeriodGradeHeader, headerRows[2].children[columnDataOffset + colspan]);
+    }
+    //#endregion
+
     //#region Päeviku nimekirja vaate täiendused
     function addMyJournals() {
         const schoolId = 14;
@@ -1026,16 +1155,19 @@ if (typeof GM_log === 'function')
         }
     });
 
-    // Download class-teacher raport for grants as a JSON
-    if (oppetoetus) {
-        addXHRInterceptor(url => url.includes("hois_back/reports/studentgroupteacher"), data => {
+    // Rühmajuhataja aruanne
+    addXHRInterceptor(url => url.includes("hois_back/reports/studentgroupteacher"), data => {
+        // Download class-teacher raport for grants as a JSON
+        if (oppetoetus) {
             let a = document.createElement("a");
             a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
             let fileName = document.querySelector('[aria-label="Õpperühm"]').value ?? "class-teacher-report";
             a.download = `${fileName}.json`;
             a.click();
-        });
-    }
+        }
+
+        currentClassTeacherReport = data;
+    });
 
     // Get current student data, https://tahvel.edu.ee/hois_back/students/12345
     addXHRInterceptor(url => url.match(/hois_back\/students\/\d+$/) !== null, data => {
