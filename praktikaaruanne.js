@@ -326,7 +326,7 @@ let groupsMap = JSON.parse(localStorage.getItem("us_groupsMap")) || {};
 let reverseGroupsMap = Object.fromEntries(Object.entries(groupsMap).map(([key, value]) => [value, key]));
 async function updateGroupsMap() {
     let groups = {}
-    let data = await fetch("https://tahvel.edu.ee/hois_back/studentgroups?isValid=true&lang=ET&size=150", {
+    let data = await fetch("https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&size=400", {
         "headers": {
             "accept": "application/json, text/plain, */*",
             "accept-language": "en-GB,en;q=0.9,en-US;q=0.8,et;q=0.7",
