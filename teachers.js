@@ -85,6 +85,7 @@ if (typeof GM_log === 'function')
     // If possible validate the data before using it. For example, the studentId in the URL should match the currentStudent.id
     let currentStudent = null;
     let currentClassTeacherReport = null;
+    let currentStudentModules = null;
 
     //#region Entry point to scripts and MutationObserver config
 
@@ -153,8 +154,11 @@ if (typeof GM_log === 'function')
         if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Õppekava täitmine']`)) {
             let firstModule = document.querySelector(".hois-collapse-parent div:first-of-type > span");
             if (firstModule && !isAlreadyApplied(firstModule)) {
-                if (studentProfileModuleAndJournalLinks(studentId))
+                console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
+                if (currentStudent?.id == studentId) {
                     addAppliedMarker(firstModule);
+                    studentProfileModuleAndJournalLinks(studentId)
+                }
             };
         }
 
@@ -783,76 +787,139 @@ if (typeof GM_log === 'function')
     //#endregion
 
     //#region Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
-    /**
-     * @param {*} studentId 
-     * @returns boolean True if the student is the current student and the links were added
-     */
-    function studentProfileModuleAndJournalLinks(studentId) {
-        console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
-        if (currentStudent?.id != studentId) {
-            return false;
-        }
-
-        const groupId = currentStudent?.curriculumVersion?.id;
+    async function studentProfileModuleAndJournalLinks(studentId) {
+        const curriculumVersionId = currentStudent?.curriculumVersion?.id;
         const groupCode = currentStudent?.curriculumVersion?.code;
-        const modules = document.querySelectorAll(".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span");
-        const journals = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
+        const modulesDom = document.querySelectorAll(".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span");
+        const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
 
         // Query moduleProtocols
-        fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${groupId}&lang=ET&page=0&size=75`, {
-            headers: {
-                "accept": "application/json",
-            }
-        })
-            .then(r => r.json()).then(moduleProtocols => {
-                modules.forEach(module => {
-                    // remove last part of module name that is in brackets, search from the end of the string
-                    let moduleName = module.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+        let moduleProtocolsResponse = await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`, {
+            headers: { "accept": "application/json" }
+        });
+        let moduleProtocols = await moduleProtocolsResponse.json();
+        modulesDom.forEach(moduleDom => {
+            // remove last part of module name that is in brackets, search from the end of the string
+            let moduleName = moduleDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
 
-                    // find matching moduleProtocols and add a links
-                    moduleProtocols.content
-                        .filter(mp => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName)
-                        .forEach(mp => {
-                            // insert a tag with href=`https://tahvel.edu.ee/#/moduleProtocols/module/129756/edit`  ${m.id}?
-                            let moduleLink = document.createElement("a");
-                            moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
-                            moduleLink.target = "_blank";
-                            moduleLink.textContent = mp.id;
-                            moduleLink.style.paddingRight = "5px";
-                            moduleLink.style.fontWeight = "bold";
-                            moduleLink.style.color = "var(--color-new-primary-blue-1)";
-                            moduleLink.style.textDecoration = "none";
-                            module.appendChild(moduleLink);
-                        });
+            // find matching moduleProtocols and add a links to protocols
+            moduleProtocols.content
+                .filter(mp => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName)
+                .forEach(mp => {
+                    // insert a tag with href=`https://tahvel.edu.ee/#/moduleProtocols/module/129756/edit`  ${m.id}?
+                    let moduleLink = document.createElement("a");
+                    moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
+                    moduleLink.target = "_blank";
+                    moduleLink.textContent = mp.id;
+                    moduleLink.style.paddingRight = "5px";
+                    moduleLink.style.fontWeight = "bold";
+                    moduleLink.style.color = "var(--color-new-primary-blue-1)";
+                    moduleLink.style.textDecoration = "none";
+                    moduleDom.appendChild(moduleLink);
                 });
-            });
 
-        // Query journals
-        fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-            headers: {
-                "accept": "application/json",
-            }
-        }).then(r => r.json()).then(vocationalConnectedEntities => {
-            journals.forEach(journal => {
-                // remove last part of journal name that is in brackets, search from the end of the string
-                let journalName = journal.textContent.trim().replace(/\s*\([^)]*\)$/, "");
-
-                // find matching journals and add a links
-                vocationalConnectedEntities
-                    .filter(e => e.type === "journal" && e.nameEt === journalName)
-                    .forEach(e => {
-                        // insert a tag with target="_blank" href=`https://tahvel.edu.ee/#/journal/${e.entityId}/edit`  content=e.entityId
-                        let journalLink = document.createElement("a");
-                        journalLink.href = `#/journal/${e.entityId}/edit`;
-                        journalLink.target = "_blank";
-                        journalLink.textContent = e.entityId;
-                        journalLink.style.paddingRight = "5px";
-                        journal.appendChild(journalLink);
+            // btn/link to create a new module protocol
+            let moduleData = currentStudentModules.curriculumModules.find(m => m.curriculumModule.nameEt === moduleName);
+            if (moduleData) {
+                let newModuleLink = document.createElement("a");
+                newModuleLink.addEventListener('click', async () => {
+                    newModuleLink.style.pointerEvents = "none";
+                    newModuleLink.style.color = "gray";
+                    newModuleLink.textContent = "Laeb...";
+                    // perpare data and show it in confirm dialog
+                    let studyYearResponse = await fetch("https://tahvel.edu.ee/hois_back/school/studyYear/current-or-next-dto", {
+                        "credentials": "include",
+                        "headers": { "Accept": "application/json, text/plain, */*" },
+                        "method": "GET"
                     });
-            });
+                    let studyYear = await studyYearResponse.json();
+                    let studentsResponse = await await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`, {
+                        "credentials": "include",
+                        "headers": { "Accept": "application/json, text/plain, */*" },
+                        "method": "GET"
+                    });
+                    let students = await studentsResponse.json();
+                    let moduleName = moduleData.curriculumModule.nameEt;
+                    if (!(currentStudent.curriculumVersion.id && studyYear.id && students.teacher.id, moduleData.id)) {
+                        console.log("Module data", moduleData);
+                        console.log("Students data", students);
+                        console.log("Study year data", studyYear);
+                        console.log("Current student data", currentStudent);
+                        alert("Tekkis viga, vaata konsooli.");
+                        // restore button
+                        newModuleLink.style.pointerEvents = "";
+                        newModuleLink.style.color = "var(--color-new-primary-blue-1)";
+                        newModuleLink.textContent = "Uus protokoll";
+                        return;
+                    }
+
+                    let confirmText = `Oled loomas uut protokolli moodulile ${moduleName}. Moodulile määratakse õppeaasta ${studyYear.nameEt}, õpetajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} õpilast.`;
+                    if (confirm(confirmText)) {
+                        let newModuleResponse = await fetch("https://tahvel.edu.ee/hois_back/moduleProtocols", {
+                            "credentials": "include",
+                            "headers": {
+                                "Accept": "application/json, text/plain, */*",
+                                "Content-Type": "application/json;charset=utf-8",
+                                "X-XSRF-TOKEN": getCsrfToken(),
+                            },
+                            "body": JSON.stringify({
+                                "protocolVdata": {
+                                    "curriculumVersionOccupationModule": moduleData.id,
+                                    "curriculumVersion": currentStudent.curriculumVersion.id,
+                                    "studyYear": studyYear.id,
+                                    "teacher": students.teacher.id
+                                },
+                                "protocolStudents": students.occupationModuleStudents.map(s => ({ studentId: s.studentId })),
+                                "type": "module",
+                                "isBasic": false,
+                                "isSecondary": false,
+                                "isHigher": false,
+                                "isVocational": true
+                            }),
+                            "method": "POST"
+                        });
+                        let newModule = await newModuleResponse.json();
+                        // open the module in a new tab
+                        window.open(`#/moduleProtocols/module/${newModule.id}/edit`, '_blank');
+                        // restore button
+                        newModuleLink.style.pointerEvents = "";
+                        newModuleLink.style.color = "var(--color-new-primary-blue-1)";
+                        newModuleLink.textContent = "Uus protokoll";
+                    }
+                });
+                newModuleLink.textContent = 'Uus protokoll';
+                newModuleLink.style.paddingRight = "5px";
+                newModuleLink.style.color = "var(--color-new-primary-blue-1)";
+                newModuleLink.style.textDecoration = "none";
+                newModuleLink.style.textTransform = "none";
+                newModuleLink.style.border = "1px solid var(--color-new-primary-blue-1)";
+                newModuleLink.style.whiteSpace = "nowrap";
+                moduleDom.appendChild(newModuleLink);
+            }
         });
 
-        return true; // I don't need to wait for promises here, this avoids multiple requests when observer triggers multiple times before the promises are resolved
+        // Query journals
+        let journalsResponse = await fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+            headers: { "accept": "application/json" }
+        });
+        let vocationalConnectedEntities = await journalsResponse.json();
+        journalsDom.forEach(journal => {
+            // remove last part of journal name that is in brackets, search from the end of the string
+            let journalName = journal.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+
+            // find matching journals and add a links
+            vocationalConnectedEntities
+                .filter(e => e.type === "journal" && e.nameEt === journalName)
+                .forEach(e => {
+                    // insert a tag with target="_blank" href=`https://tahvel.edu.ee/#/journal/${e.entityId}/edit`  content=e.entityId
+                    let journalLink = document.createElement("a");
+                    journalLink.href = `#/journal/${e.entityId}/edit`;
+                    journalLink.target = "_blank";
+                    journalLink.textContent = e.entityId;
+                    journalLink.style.paddingRight = "5px";
+                    journal.appendChild(journalLink);
+                });
+        });
     }
     //#endregion
 
@@ -983,12 +1050,12 @@ if (typeof GM_log === 'function')
                 let percentage = negativeFinalGrades / totalFinalGrades * 100;
                 negativeFinalGradePercentageCell.textContent = percentage.toFixed(1) + "%";
                 // set color based on percentage, 0 green, 0-10 yellow, 10-30 orange, 30+ red white text, 50+ black bg white text
-                negativeFinalGradePercentageCell.style.backgroundColor = 
-                    percentage > 50 ? "black" : 
-                    percentage > 30 ? "#ff3333" : 
-                    percentage > 10 ? "orange" : 
-                    percentage > 0 ? "yellow" : 
-                    "#92D293";
+                negativeFinalGradePercentageCell.style.backgroundColor =
+                    percentage > 50 ? "black" :
+                        percentage > 30 ? "#ff3333" :
+                            percentage > 10 ? "orange" :
+                                percentage > 0 ? "yellow" :
+                                    "#92D293";
                 negativeFinalGradePercentageCell.style.color = percentage > 30 ? "white" : "black";
                 row.insertBefore(negativeFinalGradePercentageCell, row.children[columnDataOffset + colspan]);
                 row.insertBefore(negativeFinalGradeCell, row.children[columnDataOffset + colspan]);
@@ -1174,6 +1241,11 @@ if (typeof GM_log === 'function')
         currentStudent = data;
     });
     //#endregion
+
+    //#region Student modules
+    addXHRInterceptor(url => url.match(/hois_back\/students\/\d+\/vocationalResults$/), data => {
+        currentStudentModules = data;
+    });
 })();
 
 const groupDuration = {
@@ -1257,3 +1329,11 @@ const SissekandedEnum = {
     "SISSEKANNE_T": "Tund",
     "SISSEKANNE_O": "Õpiväljund"
 };
+
+function getCsrfToken() {
+    const match = document.cookie.match(new RegExp('(^| )XSRF-TOKEN=([^;]+)'));
+    if (match) {
+        return decodeURIComponent(match[2]);
+    }
+    return null;
+}
