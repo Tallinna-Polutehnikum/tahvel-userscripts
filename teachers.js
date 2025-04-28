@@ -679,17 +679,23 @@ if (typeof GM_log === 'function')
         const tableHeaders = table.querySelectorAll("thead th");
         const tableRows = table.querySelectorAll("tbody tr");
 
-        // Count negative final grades
+        // Count negative final grades and total grades
         let negativeGrades = 0;
+        let totalGrades = 0;
         tableRows.forEach(row => {
             let type = row.querySelector("td:nth-child(2)").textContent.trim();
             let grade = row.querySelector("td:nth-child(3)").textContent.trim();
             if (["MA", "X", "1", "2"].includes(grade) && type === "Lõpptulemus") {
                 negativeGrades++;
             }
+            if (["MA", "X", "1", "2", "3", "4", "5", "A"].includes(grade) && type === "Lõpptulemus") {
+                totalGrades++;
+            }
         });
+
+        let negativeGradesPercentage = totalGrades > 0 ? (negativeGrades / totalGrades) * 100 : 0;
         let negativeGradesCounter = document.createElement("span");
-        negativeGradesCounter.textContent = `Negatiivseid lõpptulemusi: ${negativeGrades}`;
+        negativeGradesCounter.textContent = `Negatiivseid lõpptulemusi: ${negativeGrades} (${negativeGradesPercentage.toFixed(2)}%)`;
 
 
         // Add filter activation buttons before the table
@@ -944,7 +950,7 @@ if (typeof GM_log === 'function')
             });
         });
 
-        // Site has 3 rows inside thead, I want to select the last column of every row in thead. On the thrid row, get last x th elements, based on first row colspan number
+        // Site has 3 rows inside thead, I want to select the last column of every row in thead. On the third row, get last x th elements, based on first row colspan number
         table = document.querySelector(".student-group-teacher-table");
         const columnDataOffset = 2;
         let headerRows = table.querySelectorAll("thead tr");
