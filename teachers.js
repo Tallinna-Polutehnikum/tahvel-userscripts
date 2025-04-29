@@ -985,10 +985,10 @@ if (typeof GM_log === 'function')
                 // set color based on percentage, 0 green, 0-10 yellow, 10-30 orange, 30+ red white text, 50+ black bg white text
                 negativeFinalGradePercentageCell.style.backgroundColor =
                     percentage > 50 ? "black" :
-                    percentage > 30 ? "#ff3333" :
-                    percentage > 10 ? "orange" :
-                    percentage > 0 ? "yellow" :
-                    "#92D293";
+                        percentage > 30 ? "#ff3333" :
+                            percentage > 10 ? "orange" :
+                                percentage > 0 ? "yellow" :
+                                    "#92D293";
                 negativeFinalGradePercentageCell.style.color = percentage > 30 ? "white" : "black";
                 row.insertBefore(negativeFinalGradePercentageCell, row.children[columnDataOffset + colspan]);
                 row.insertBefore(negativeFinalGradeCell, row.children[columnDataOffset + colspan]);
@@ -1177,272 +1177,250 @@ if (typeof GM_log === 'function')
     //#endregion
 
     //#region Päevikus automaatne õpilaste kohaloleku märkimine
-    (function() {
+    (function () {
     'use strict';
 
     let studentsData = [];
 
-    // Intercepting the request for "hois_back/journals" and "journalStudents" URLs
+    const LESSON_TIMES = {
+        1: '08:15', 2: '09:10', 3: '10:05', 4: '11:00',
+        5: '12:30', 6: '13:25', 7: '14:20', 8: '15:15',
+        9: '16:10', 10: '17:05', 11: '18:00', 12: '18:55',
+        13: '19:50', 14: '20:45'
+    };
+
     addXHRInterceptor(
         url => url.includes("hois_back/journals") && url.includes("journalStudents"),
         data => {
             if (Array.isArray(data) && data.length > 0) {
-                studentsData = data.map(student => {
-                    const studentGroup = (typeof student.studentGroup === 'string' && student.studentGroup.trim() !== '') ? student.studentGroup : '';  // Default to empty string if invalid
-
-                    const studentId = Number(student.studentId);
-                    if (isNaN(studentId)) {
-                        console.error('Invalid studentId:', student.studentId);
-                    }
-
-                    return {
-                        studentId: studentId,  // Make sure studentId is an integer
-                        fullname: student.fullname,
-                        firstname: student.firstname,
-                        studentGroup: studentGroup
-                    };
-                });
-
-                console.log('Captured students:', studentsData);  // Log students data for debugging
-            } else {
-                console.error('No student data found.');
+                studentsData = data;
+                console.log('Captured students:', studentsData);
             }
         }
     );
 
-    // Function to check if all required fields are selected
-    function checkIfAllFieldsAreSelected() {
-        const selectedDate = window.selectedDate;  // Date selected from the calendar
-        const lessonStartTime = window.selectedStartLesson;  // Start time of the lesson
-        const lessonsCount = window.selectedLessonsAmount;  // Number of lessons
-
-        console.log('Checking if all fields are selected:');
-        console.log('Selected Date:', selectedDate);
-        console.log('Selected Start Lesson:', lessonStartTime);
-        console.log('Selected Lessons Count:', lessonsCount);
-
-        if (!selectedDate || !lessonStartTime || !lessonsCount) {
-            console.log('One or more fields are missing!');
-            return false;  // If any of the fields are missing
+    function getCurrentSelectedDate() {
+        // First try the dropdown date (entryDateSelect)
+        const dropdown = document.querySelector('md-select[ng-model="entryDateSelect"]');
+        const label = dropdown?.querySelector('.md-select-value span');
+        if (label && label.textContent.includes('.')) {
+            const [day, month, year] = label.textContent.trim().split('.');
+            return `${year}-${month}-${day}`;
         }
-        return true;  // All fields are selected
+
+        // Then try md-datepicker input field
+        const input = document.querySelector('md-datepicker input');
+        if (input && input.value.includes('.')) {
+            const [day, month, year] = input.value.split('.');
+            return `${year}-${month}-${day}`;
+        }
+
+        return null;
     }
 
-    // Button click handler
+
+    function convertLessonStartTime(lessonStartTime) {
+        const lessonStart = LESSON_TIMES[lessonStartTime];
+        const currentDate = getCurrentSelectedDate();
+        if (!lessonStart || !currentDate) return null;
+        const [hour, minute] = lessonStart.split(':').map(Number);
+        const [year, month, day] = currentDate.split('-').map(Number);
+        return new Date(year, month - 1, day, hour, minute);
+    }
+
+    function calculateLessonEndTime(startLesson, lessonCount) {
+        const startDate = convertLessonStartTime(startLesson);
+        if (!startDate) return null;
+        const totalMinutes = (lessonCount * 45) + ((lessonCount - 1) * 10);
+        startDate.setMinutes(startDate.getMinutes() + totalMinutes);
+        return startDate.toISOString().slice(0, 19);
+    }
+
+    function checkIfAllFieldsAreSelected() {
+        const date = getCurrentSelectedDate();
+        return Boolean(date && !isNaN(parseInt(window.selectedStartLesson)));
+    }
+
+    function getCheckbox(row, model) {
+        return row.querySelector(`[ng-model="journalEntryStudents[row.id].${model}"]`);
+    }
+
     function handleButtonClick() {
-        // Check if studentsData is populated correctly
-        console.log('Students Data:', studentsData);  // Log studentsData here
+        if (studentsData.length === 0) return alert('Õpilaste andmeid ei ole saadaval.');
+        if (!checkIfAllFieldsAreSelected()) return alert('Palun vali kuupäev ja algustund.');
 
-        if (studentsData.length === 0) {
-            alert('No student data available.');
-            return;
+        const startLesson = parseInt(window.selectedStartLesson);
+        if (isNaN(startLesson) || !LESSON_TIMES[startLesson]) return alert('Vale või puuduv algustund.');
+
+        const lessonCountElem = document.querySelector("[ng-model='journalEntry.lessons']");
+        if (!lessonCountElem || isNaN(parseInt(lessonCountElem.value))) return alert('Tundide arv pole sisestatud.');
+
+        const lessonCount = parseInt(lessonCountElem.value);
+        const lessonStartDate = convertLessonStartTime(startLesson);
+        const lessonEndTime = calculateLessonEndTime(startLesson, lessonCount);
+        const lessonStartTime = lessonStartDate.toISOString().slice(0, 19);
+        const selectedDate = getCurrentSelectedDate();
+
+        let lessonScanStartTime = lessonStartTime;
+        if (startLesson === 1) {
+            lessonScanStartTime = new Date(lessonStartDate.getTime() - 45 * 60000).toISOString().slice(0, 19);
+        } else if (startLesson === 5) {
+            lessonScanStartTime = new Date(lessonStartDate.getTime() - 45 * 60000).toISOString().slice(0, 19);
+        } else {
+            lessonScanStartTime = new Date(lessonStartDate.getTime() - 10 * 60000).toISOString().slice(0, 19);
         }
 
-        // Check if all required fields (date, start time, and lessons) are selected
-        if (!checkIfAllFieldsAreSelected()) {
-            alert('Please select a date, start time, and number of lessons.');
-            return;  // Stop the button action if any of the fields are missing
-        }
 
-        console.log('Button clicked, sending data to server...');
         const requestData = {
-            students: studentsData,
-            selectedDate: window.selectedDate,
-            lessonStartTime: window.selectedStartLesson,
-            lessonsCount: window.selectedLessonsAmount
+            students: studentsData.map(s => s.studentId),
+            selectedDate,
+            lessonStartTime,
+            lessonScanStartTime,
+            lessonEndTime
         };
 
         fetch('http://localhost:8000/process-journal', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         })
-        .then(response => response.json())
-        .then(result => {
-            console.log('Matched students:', result.matched_students);
+            .then(res => res.json())
+            .then(result => {
+                if (!result || typeof result.matched_students !== 'object') {
+                    alert('Ühtegi registreeritud õpilast ei leitud selles ajavahemikus.');
+                    return;
+                }
 
-            let absentCount = 0;
-            let removedCount = 0;
+                const matched_ids = Object.keys(result.matched_students);
+                if (!matched_ids.length) {
+                    alert('Ühtegi registreeritud õpilast ei leitud selles ajavahemikus.');
+                    return;
+                }
 
-            const allCheckboxes = [...document.querySelectorAll('[ng-model="journalEntryStudents[row.id].withoutReason"]')];
-            const isAnyAbsentChecked = allCheckboxes.some(checkbox => checkbox.getAttribute('aria-checked') === 'true');
+                const absentCheckboxes = [...document.querySelectorAll('[ng-model="journalEntryStudents[row.id].withoutReason"]')];
+                const lateCheckboxes = [...document.querySelectorAll('[ng-model="journalEntryStudents[row.id].late"]')];
 
-            if (!isAnyAbsentChecked) {
-                allCheckboxes.forEach(checkbox => {
-                    if (checkbox.getAttribute('aria-checked') === 'false') {
-                        checkbox.click();  // Mark all students as absent
-                        absentCount++;
-                    }
-                });
+                const isAbsentChecked = absentCheckboxes.some(cb => cb.getAttribute('aria-checked') === 'true');
+                const isLateChecked = lateCheckboxes.some(cb => cb.getAttribute('aria-checked') === 'true');
 
-                result.matched_students.forEach(matchedStudent => {
-                    const studentId = matchedStudent.studentId;
+                let absentCount = 0;
+                let removedCount = 0;
+                let lateCount = 0;
+                let correctedCount = 0;
 
-                    const student = studentsData.find(stu => stu.studentId === studentId);
-
-                    if (student) {
-                        const studentRow = [...document.querySelectorAll('tr.md-row')].find(row => {
-                            const nameCell = row.querySelector('td.md-cell span');
-                            return nameCell && nameCell.textContent.trim() === student.fullname;
-                        });
-
-                        if (studentRow) {
-                            const checkbox = studentRow.querySelector('[ng-model="journalEntryStudents[row.id].withoutReason"]');
-                            if (checkbox && checkbox.getAttribute('aria-checked') === 'true') {
-                                checkbox.click();  // Uncheck the absence checkbox
-                                console.log(`Removed absence for ${student.fullname}`);
-                                removedCount++;
-                            }
+                if (!isAbsentChecked && !isLateChecked) {
+                    absentCheckboxes.forEach(cb => {
+                        if (cb.getAttribute('aria-checked') === 'false') {
+                            cb.click();
+                            absentCount++;
                         }
+                    });
+                }
+
+                matched_ids.forEach(studentId => {
+                    const scanTimeStr = result.matched_students[studentId];
+                    const scanTime = new Date(scanTimeStr);
+
+                    let earlyBuffer = 10;
+                    if (startLesson === 1) earlyBuffer = 45;
+                    else if (startLesson === 5) earlyBuffer = 40;
+
+                    const allowedScanStart = new Date(lessonStartDate.getTime() - earlyBuffer * 60000);
+                    const isInValidScanWindow = scanTime >= allowedScanStart && scanTime <= lessonStartDate;
+                    const isLate = (scanTime - lessonStartDate) / 60000 >= 20;
+
+                    const student = studentsData.find(s => s.studentId == studentId);
+                    if (!student) return;
+
+                    const row = [...document.querySelectorAll('tr.md-row')].find(r => {
+                        const cell = r.querySelector('td.md-cell span');
+                        return cell && cell.textContent.trim().includes(student.fullname);
+                    });
+                    if (!row) return;
+
+                    const absentBox = getCheckbox(row, 'withoutReason');
+                    const lateBox = getCheckbox(row, 'late');
+
+                    if (absentBox && absentBox.getAttribute('aria-checked') === 'true') {
+                        absentBox.click();
+                        if (!isLate) removedCount++;
+                    }
+
+                    if (lateBox && isLate && lateBox.getAttribute('aria-checked') === 'false') {
+                        lateBox.click();
+                        lateCount++;
+                    } else if (lateBox && !isLate && lateBox.getAttribute('aria-checked') === 'true') {
+                        lateBox.click();
+                        correctedCount++;
                     }
                 });
 
-                alert(`Marked ${absentCount} students absent, removed absence for ${removedCount} matched students.`);
-            } else {
-                // If any checkboxes are checked, we check only the matched students
-                result.matched_students.forEach(matchedStudent => {
-                    const studentId = matchedStudent.studentId;
+                const trueAbsentCount = absentCount - removedCount - lateCount;
+                const totalStudents = absentCheckboxes.length;
 
-                    const student = studentsData.find(stu => stu.studentId === studentId);
-
-                    if (student) {
-                        const studentRow = [...document.querySelectorAll('tr.md-row')].find(row => {
-                            const nameCell = row.querySelector('td.md-cell span');
-                            return nameCell && nameCell.textContent.trim() === student.fullname;
-                        });
-
-                        if (studentRow) {
-                            const checkbox = studentRow.querySelector('[ng-model="journalEntryStudents[row.id].withoutReason"]');
-                            if (checkbox && checkbox.getAttribute('aria-checked') === 'true') {
-                                checkbox.click();  // Uncheck the box for matched student (this is to "remove" it)
-                                console.log(`Removed absence checkbox for matched student ${student.fullname}`);
-                                removedCount++;
-                            }
-                        }
-                    }
-                });
-
-                alert(`Removed absence for ${removedCount} matched students.`);
-            }
-
-        })
-        .catch(error => {
-            console.error('Error sending student journal to the server:', error);
-            alert('Error sending data to the server');
-        });
+                if (!isLateChecked && !isAbsentChecked) {
+                    alert(
+                        `
+                         Puudujad märgitud:  ${trueAbsentCount}
+                         Märgiti kohalolijaks: ${removedCount}
+                         Märgiti hilinejaks:   ${lateCount}
+                         ------------------------------
+                         Õpilasi kokku:        ${totalStudents}`
+                    );
+                } else {
+                    alert(
+                        `
+                         Märgiti hilinejaks:   ${lateCount}
+                         Märgiti kohalolijaks:   ${removedCount}
+                         ------------------------------
+                         Õpilasi kokku:          ${totalStudents}`
+                    );
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('Andmete saatmisel tekkis viga');
+            });
     }
 
-    // Adding the custom button
-    function journalEntryCustomButton(siblingContainer) {
-        let customButton = document.createElement("a");
-        customButton.href = "#";
-        customButton.textContent = "Märgi registreeritud õpilased";  // Button text changed
-        customButton.style.color = "blue";
-        customButton.style.cursor = "pointer";
-        customButton.title = "Klikkides täidetakse kõik puudujad välja (v.a. sobivad)";
-
-        customButton.addEventListener("click", (event) => {
-            event.preventDefault();
+    function createCustomButton(container) {
+        const button = document.createElement("a");
+        Object.assign(button, {
+            href: "#",
+            textContent: "Märgi registreeritud õpilased",
+            title: "Klikkides täidetakse kõik puudujad välja (v.a. sobivad)"
+        });
+        button.style.color = "blue";
+        button.style.cursor = "pointer";
+        button.addEventListener("click", e => {
+            e.preventDefault();
             handleButtonClick();
         });
-
-        siblingContainer.appendChild(document.createElement("br"));
-        siblingContainer.appendChild(customButton);
+        container.appendChild(document.createElement("br"));
+        container.appendChild(button);
     }
 
-    // Inject the custom button into the page
     function injectCustomButton() {
-        const allSpans = document.querySelectorAll('td.md-cell > span');
-
-        for (let span of allSpans) {
-            const existingLink = span.querySelector('a');
-
-            if (existingLink && existingLink.textContent.includes('Märgi kõik puudujaks') && !span.querySelector('a.customButton')) {
-                journalEntryCustomButton(span);
-                span.querySelector('a').classList.add('customButton');
+        document.querySelectorAll('td.md-cell > span').forEach(span => {
+            const link = span.querySelector('a');
+            if (link && link.textContent.includes('Märgi kõik puudujaks') && !span.querySelector('a.customButton')) {
+                createCustomButton(span);
+                link.classList.add('customButton');
             }
-        }
-
+        });
         setTimeout(injectCustomButton, 500);
     }
 
-    injectCustomButton();
-})();
-
-
-
-// Calendar date detection
-(function() {
-    function startObservingCalendar() {
-        const calendarContainer = document.querySelector('div.md-datepicker-calendar');
-
-        if (calendarContainer) {
-            calendarContainer.addEventListener('click', event => {
-                const clickedTd = event.target.closest('td.md-calendar-date');
-                if (clickedTd) {
-                    const label = clickedTd.getAttribute('aria-label');
-                    if (label) {
-                        const parts = label.split(' ');
-                        if (parts.length >= 4) {
-                            const day = parts[2].padStart(2, '0');
-                            const monthName = parts[1].toLowerCase();
-                            const year = parts[3];
-
-                            const monthMap = {
-                                jaanuar: '01', veebruar: '02', märts: '03', aprill: '04',
-                                mai: '05', juuni: '06', juuli: '07', august: '08',
-                                september: '09', oktoober: '10', november: '11', detsember: '12'
-                            };
-
-                            const month = monthMap[monthName];
-                            if (month) {
-                                window.selectedDate = `${year}-${month}-${day}`;
-                                console.log('Formatted selected date (calendar):', window.selectedDate);
-                            }
-                        }
-                    }
-                }
-            });
-        } else {
-            setTimeout(startObservingCalendar, 500);
-        }
-
-        const dateListContainer = document.querySelector('md-content[aria-label="Vali kuupäev"]');
-
-        if (dateListContainer) {
-            dateListContainer.addEventListener('click', event => {
-                const clickedOption = event.target.closest('md-option[role="option"]');
-                if (clickedOption && clickedOption.hasAttribute('aria-label')) {
-                    const dateStr = clickedOption.getAttribute('aria-label');
-                    if (dateStr && dateStr.includes('.')) {
-                        const [day, month, year] = dateStr.split('.');
-                        window.selectedDate = `${year}-${month}-${day}`;
-                        console.log('Formatted selected date (list):', window.selectedDate);
-                    }
-                }
-            });
-        } else {
-            setTimeout(startObservingCalendar, 500);
-        }
-    }
-
-    startObservingCalendar();
-})();
-
-// Start observing start lesson and lessons amount
-(function() {
     function observeStartLessonSelect() {
         const selectContainer = document.querySelector('md-content[role="listbox"][aria-label="Algustund"]');
-
         if (selectContainer) {
             selectContainer.addEventListener('click', event => {
                 const clickedOption = event.target.closest('md-option[role="option"]');
                 if (clickedOption && clickedOption.hasAttribute('aria-label')) {
                     const value = clickedOption.getAttribute('aria-label');
-                    window.selectedStartLesson = value;
-                    console.log('User clicked start lesson:', window.selectedStartLesson);
+                    if (!isNaN(parseInt(value))) {
+                        window.selectedStartLesson = parseInt(value);
+                    }
                 }
             });
         } else {
@@ -1450,25 +1428,11 @@ if (typeof GM_log === 'function')
         }
     }
 
+    injectCustomButton();
     observeStartLessonSelect();
-
-    function observeLessonsAmountInput() {
-        const inputElement = document.querySelector('input[aria-label="lessons"]');
-        if (inputElement) {
-            inputElement.addEventListener('input', () => {
-                const value = inputElement.value;
-                if (value) {
-                    window.selectedLessonsAmount = value;
-                    console.log('User entered lessons amount:', window.selectedLessonsAmount);
-                }
-            });
-        } else {
-            setTimeout(observeLessonsAmountInput, 500);
-        }
-    }
-
-    observeLessonsAmountInput();
 })();
+
+
 
     //#endregion
 })();
