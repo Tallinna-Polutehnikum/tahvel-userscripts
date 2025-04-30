@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.4
+// @version      1.2.5
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -32,7 +32,7 @@
 // - Rühmajuhataja aruandes saab JSON formaadis alla laadida, et pingeread koostada (töös, vajab täiendamist)
 // - Rühmajuhataja aruandes toob koondandmed tabeli ette, lisab negatiivsed hinded
 // - Admin/tugitöötaja saab õpilase profiilis näha negatiivsete hinnete kokkuvõtet vahekaardil "Sooritamise järjekorras"
-// - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada mooduli protokolli ja päevikut
+// - Admin/tugitöötaja saab õpilase profiilis "Õppekava täitmine" vahekaardil avada päeviku, mooduli protokolli ja lisada uue protokolli
 // - Päevikute nimekirjas on tänased päevikud kõige ees
 // - TODO Rühmajuhataja aruandes saaks printida PDFi ainult võlgenvustest millel pole päevikus positiivset lõpphinnet
 // - TODO Päevikus tundi sisestades täidetakse ära tunni algus ja pikkus vastavalt tunniplaanile
