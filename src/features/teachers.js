@@ -62,7 +62,7 @@ if (typeof GM_log === 'function')
             max-height: 300px;
         }
         /* rühmajuhataja aruande tabelis nimed scrolliks kaasa */
-        .student-group-teacher-table tbody td:nth-child(2) {
+        .tertiary-table student-group-teacher-table tbody td:nth-child(2) {
             position: sticky;
             left: 0;
             background: white; /* Prevents content from being hidden under scrolling elements */
