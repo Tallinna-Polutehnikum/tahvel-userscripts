@@ -1,14 +1,4 @@
-// ==UserScript==
-// @name         Täiendatud Tahvel Õpetajale
-// @namespace    https://tahvel.edu.ee/
-// @version      1.2.5
-// @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
-// @author       Timo Triisa
-// @match        https://tahvel.edu.ee/*
-// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
-// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
-// @grant GM_log
-// ==/UserScript==
+
 
 /**
  * Kuidas seda skripti lugeda/täiendada:
@@ -118,7 +108,8 @@ if (typeof GM_log === 'function')
                 journalEntryNotifyStudent(homeworkDesc);
             }
             // Add batch absent button
-            let batchGrade = document.querySelector("md-dialog-content table tbody tr i");
+            let batchGrade = document.querySelector(".mass-grade");
+            console.log(batchGrade)
             if (batchGrade && batchGrade.textContent.includes("Hinde korraga") && !isAlreadyApplied(batchGrade)) {
                 journalEntryBatchAbsent(batchGrade);
                 addAppliedMarker(batchGrade);
@@ -620,27 +611,36 @@ if (typeof GM_log === 'function')
     function journalEntryBatchAbsent(siblingContainer) {
         let batchAbsent = document.createElement("a");
         batchAbsent.href = "#";
-        batchAbsent.textContent = "Märgi kõik puudujaks";
+        batchAbsent.textContent = " | Märgi kõik puudujaks";
         batchAbsent.style.color = "blue";
         batchAbsent.style.cursor = "pointer";
 
         batchAbsent.addEventListener("click", (event) => {
             event.preventDefault();
-            let absentCheckboxes = [...document.querySelectorAll(`[ng-model="journalEntryStudents[row.id].withoutReason"]`)];
-            let allChecked = absentCheckboxes.every(checkbox => checkbox.getAttribute("aria-checked") === "true");
-            absentCheckboxes.forEach(checkbox => {
-                if (checkbox.getAttribute("aria-checked") === (allChecked ? "true" : "false")) {
-                    checkbox.click();
+            let absentCheckboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
+            let allChecked = absentCheckboxes.every(btn => btn.matches(':has(div.checked)') === true);
+
+            absentCheckboxes.forEach(btn => {
+                if (allChecked == true) {
+                    if (btn.matches(':has(div.checked)') === true) {
+                        btn.click();
+                    }
+                }
+                else {
+                    if (btn.matches(':has(div.checked)') === false) {
+                        btn.click();
+                    }
                 }
             });
+
             // Update the button text just for the clarity. But query DOM again, because some checkboxes get removed when students are excused
-            absentCheckboxes = [...document.querySelectorAll(`[ng-model="journalEntryStudents[row.id].withoutReason"]`)];
-            allChecked = absentCheckboxes.every(checkbox => checkbox.getAttribute("aria-checked") === "true");
-            batchAbsent.textContent = allChecked ? "Märgi kõik kohalolijaks" : "Märgi kõik puudujaks";
+            absentCheckboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
+            allChecked = absentCheckboxes.every(btn => btn.matches(':has(div.checked)') === true);
+            batchAbsent.textContent = allChecked ? " | Märgi kõik kohalolijaks" : " | Märgi kõik puudujaks";
         });
 
-        siblingContainer.parentElement.appendChild(document.createElement("br"));
-        siblingContainer.parentElement.appendChild(batchAbsent);
+        //siblingContainer.parentElement.appendChild(document.createElement("br"));
+        siblingContainer.appendChild(batchAbsent);
     }
     //#endregion
 
@@ -706,7 +706,22 @@ if (typeof GM_log === 'function')
             let active = onlyNegativeGradesToggle.dataset.active === "true";
             onlyNegativeGradesToggle.dataset.active = !active;
             onlyNegativeGradesToggle.textContent = active ? "Näita neg. hindeid" : "Näita kõiki hindeid";
-            if (active) {
+            if (active) {// ==UserScript==
+// @name         New Userscript
+// @namespace    http://tampermonkey.net/
+// @version      2025-09-18
+// @description  try to take over the world!
+// @author       You
+// @match        https://tahvel.edu.ee/
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=edu.ee
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Your code here...
+})();
                 tableRows.forEach(row => {
                     row.style.display = "";
                 });
@@ -1248,7 +1263,7 @@ if (typeof GM_log === 'function')
     });
 })();
 
-const groupDuration = {
+/* const groupDuration = {
     "AA": 2.8062970568104038,
     "AV": 2.8145106091718,
     "EA": 2.8062970568104038,
@@ -1277,6 +1292,7 @@ const groupDuration = {
     "TT": 2.8062970568104038,
     "VM": 2.8062970568104038
 }
+*/
 
 /**
  * Ma ei tea veel kas teha hardcoded eesliidese järgi pikkused või teha gruppide päringu ajal arvutus ja cacheda see localstorage-sse.

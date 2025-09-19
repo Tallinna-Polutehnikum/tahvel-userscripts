@@ -1,15 +1,3 @@
-// ==UserScript==
-// @name         Täiendatud Tahvel katsetused
-// @namespace    https://tahvel.edu.ee/
-// @version      1.0.0
-// @description  Katsetused mis võib-olla kõigile ei meeldi, aga mõnele võib kasulik olla
-// @author       Timo Triisa
-// @match        https://tahvel.edu.ee/*
-// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/experimental.js
-// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/experimental.js
-// @grant GM_log
-// ==/UserScript==
-
 // Features:
 // - Tunniplaani ülevaade: korduvad ja üksikud kanded lihtsustatud tabelina
 // - Tunniplaanis saab määra vaikefiltri, et näha enda tunde kohe kui tunniplaani avad

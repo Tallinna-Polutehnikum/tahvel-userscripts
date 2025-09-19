@@ -1,15 +1,3 @@
-// ==UserScript==
-// @name         Täiendatud Tahvel Moodulite protokollid
-// @namespace    https://tahvel.edu.ee/
-// @version      1.0.0
-// @description  Tööriistad mis aitavad leida puuduolevad moodulid, protokollidest leida parandamist vajavad hinded jms.
-// @author       Timo Triisa
-// @match        https://tahvel.edu.ee/*
-// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/moduleProtocols.js
-// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/moduleProtocols.js
-// @grant GM_log
-// ==/UserScript==
-
 console.log = GM_log;
 
 let groupsMap = JSON.parse(localStorage.getItem("us_groupsMap")) || {};
