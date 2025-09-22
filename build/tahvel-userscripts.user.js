@@ -73,7 +73,7 @@
       let lastBreadcrumb = document.querySelector("#breadcrumb-wrapper > span:last-child")?.textContent.trim() || firstPath || "Tahvel";
       document.title = lastBreadcrumb + id;
       if (window.location.href.indexOf("journal") > -1) {
-        const journalTableRows = document.querySelectorAll(".journalTable tr");
+        const journalTableRows = document.querySelectorAll(".tahvel-table tr");
         if (journalTableRows?.length > 2 && !isAlreadyApplied(journalTableRows[1])) {
           console.log("In journal, add average grade column");
           addAverageGradeColumn();
@@ -208,33 +208,28 @@
       return [averageGrade, total];
     }
     function addAverageGradeColumn() {
-      const tableHeaders = document.querySelectorAll('.journalTable th > div:not([aria-label*="Perioodi hinne"]):not([aria-label*="L\xF5pptulemus"])');
-      const periodGradeHeaders = document.querySelectorAll('.journalTable th > div[aria-label*="Perioodi hinne"]');
-      const finalGradeHeader = document.querySelector('.journalTable th > div[aria-label*="L\xF5pptulemus"]')?.parentElement;
-      const gradeColumnIndices = Array.from(tableHeaders).map((header) => {
-        const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
-        return columnIndex;
-      });
-      let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((header) => {
-        const columnIndex = Array.from(header.parentNode.parentNode.children).indexOf(header.parentNode);
-        return columnIndex;
-      });
+      const tableHeaders = document.querySelectorAll('table.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])');
+      const periodGradeHeaders = document.querySelectorAll('.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]');
+      const finalGradeHeader = document.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
+      const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
+      let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
+      console.log(periodGradeColumnIndices);
       let usedFinalGradeAsPeriodGrade = false;
       if (periodGradeColumnIndices.length === 0) {
         if (finalGradeHeader) {
           periodGradeColumnIndices = [finalGradeHeader.cellIndex];
           usedFinalGradeAsPeriodGrade = true;
         } else {
-          periodGradeColumnIndices = [document.querySelectorAll(".journalTable thead th").length - 1];
+          periodGradeColumnIndices = [document.querySelectorAll(".tahvel-table thead th").length - 1];
           usedFinalGradeAsPeriodGrade = true;
         }
       }
       console.log("Period grade columns", periodGradeColumnIndices);
-      const rows = document.querySelectorAll(".journalTable tr");
+      const rows = document.querySelectorAll(".tahvel-table tr");
       const headerRow = rows[0];
-      [...document.querySelectorAll('.journalTable th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
-      [...document.querySelectorAll('.journalTable th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
-      [...document.querySelectorAll('.journalTable th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
+      [...document.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
+      [...document.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
+      [...document.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
       for (let i = 0; i < periodGradeColumnIndices.length; i++) {
         const narrowColumnHeader = document.createElement("th");
         narrowColumnHeader.textContent = "Keskm.";
@@ -333,9 +328,9 @@
     }
     function columnBackgroundColors() {
       let coloredColumns = {};
-      [...document.querySelectorAll(".journalTable thead th.bordered")].filter((h) => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);")).forEach((h) => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0]);
+      [...document.querySelectorAll(".tahvel-table thead th.bordered")].filter((h) => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);")).forEach((h) => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0]);
       Object.entries(coloredColumns).forEach(([columnIndex, bg]) => {
-        document.querySelectorAll(`.journalTable tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach((td) => {
+        document.querySelectorAll(`.tahvel-table tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach((td) => {
           const rgbValues = bg.match(/\d+/g).map(Number);
           let alpha = Math.min(...rgbValues) < 120 ? 0.2 : 0.5;
           td.style.background = `rgba(${rgbValues[0]}, ${rgbValues[1]}, ${rgbValues[2]}, ${alpha})`;
