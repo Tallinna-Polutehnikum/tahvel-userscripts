@@ -28,11 +28,11 @@ const ContractStatus = {
     // TODO grades history database: student, subject, grade, date, teacher, etc
 
 
-    let ends2026 = [ "TA-22E", "TA-22V", "KTA-24E", "KTA-24V", "IT-22E", "IT-22V", "KIT-24E", "KIT-24V", "SA-23" ];
-    let ends2025 = [ "TA-21E", "TA-21V", "KTA-23E", "KTA-23V", "IT-21E", "IT-21V", "KIT-23E", "KIT-23V", "SA-22" ];
-    let ends2024 = [ "TA-20E", "TA-20V", "KTA-22E", "KTA-22V", "IT-20E", "IT-20V", "KIT-22E", "KIT-22V", "SA-21" ];
-    let ends2023 = [ "TA-19E", "TA-19V", "KTA-21E", "KTA-21V", "IT-19E", "IT-19V", "KIT-21E", "KIT-21V", "SA-20" ];
-    let ends2022 = [ "TA-18E", "TA-18V", "KTA-20E", "KTA-20V", "IT-18E", "IT-18V", "KIT-20E", "KIT-20V", "SA-19" ];
+    let ends2026 = ["TA-22E", "TA-22V", "KTA-24", "IT-22E", "IT-22V", "KIT-24", "SA-23"];
+    let ends2025 = ["TA-21E", "TA-21V", "KTA-23E", "KTA-23V", "IT-21E", "IT-21V", "KIT-23E", "KIT-23V", "SA-22", "LA-22"];
+    let ends2024 = ["TA-20E", "TA-20V", "KTA-22E", "KTA-22V", "IT-20E", "IT-20V", "KIT-22E", "KIT-22V", "SA-21"];
+    let ends2023 = ["TA-19E", "TA-19V", "KTA-21E", "KTA-21V", "IT-19E", "IT-19V", "KIT-21E", "KIT-21V", "SA-20", "LA-20"];
+    let ends2022 = ["TA-18E", "TA-18V", "KTA-20E", "KTA-20V", "IT-18E", "IT-18V", "KIT-20E", "KIT-20V", "SA-19"];
     let allITgroups = [...ends2022, ...ends2023, ...ends2024, ...ends2025, ...ends2026];
 
     //importGroups(allITgroups);
@@ -179,56 +179,10 @@ async function printFullReport(groupId, type = "tsv", addHeader = false) {
     ];
     const practiceSummaryKeys = [
         "firstContractStartDate", "lastContractEndDate", "maxHours", "totalHours", "totalDiaryEntries", "supervisorComments",
-        "teacherComments", "totalCharsInDescription", "contracts"
+        "teacherComments", "totalCharsInDescription"/*, "companies" this one is added manually*/
     ];
-    result += addHeader ? studentKeys.concat(practiceSummaryKeys).join("\t") + "\n" : "";
-
-    for (let pin of groupStudentsPins) {
-        // Retrieve student from Azure Cosmos DB using API
-        let response = await fetch(`http://localhost:3000/students/${groupCode}/${pin}`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-            }
-        })
-
-        if (response.ok) {
-            let student = await response.json();
-            if (!student) {
-                console.error("Student not found in database or JSON parse error " + pin + " " + groupCode);
-                return;
-            }
-            //console.log("Got student " + pin + " " + groupCode, student);
-            let studentData = studentKeys.map(key => student[key]);
-            if (student.practiceSummary) {
-                let practiceSummaryData = practiceSummaryKeys.map(key => student.practiceSummary[key]);
-                studentData.push(...practiceSummaryData);
-            } else {
-                studentData.push(...Array(practiceSummaryKeys.length).fill(""));
-            }
-            result += studentData.join("\t") + "\n";
-        } else {
-            console.error("Failed to get student " + pin + " " + groupCode);
-        }
-    }
-    return result;
-}
-
-async function printFullReport(groupId, type = "tsv", addHeader = false) {
-    let result = "";
-    /** @var string[] groupStudentsPins */
-    let groupStudentsPins = JSON.parse(localStorage.getItem(`group_student_pins_${groupId}`));
-    let groupCode = reverseGroupsMap[groupId];
-
-    const studentKeys = [
-        "firstName", "lastName", "studentGroup", "pin", "tahvelId", "lastTahvelGtrUpdate", "officialEmail", "personalEmail",
-        "ehisCode", "studyStart", "nominalStudyEnd", "curriculumPercentage", "totalFinalGrades", "negativeFinalGrades", "practiceGrade", "thesisGrade"
-    ];
-    const practiceSummaryKeys = [
-        "firstContractStartDate", "lastContractEndDate", "maxHours", "totalHours", "totalDiaryEntries", "supervisorComments",
-        "teacherComments", "totalCharsInDescription", "companies"
-    ];
-    result += addHeader ? studentKeys.concat(practiceSummaryKeys).join("\t") + "\n" : "";
+    const manualHeaders = ["internship", "companies"];
+    result += addHeader ? studentKeys.concat(practiceSummaryKeys).concat(manualHeaders).join("\t") + "\n" : "";
 
     for (let pin of groupStudentsPins) {
         // Retrieve student from Azure Cosmos DB using API
@@ -253,6 +207,35 @@ async function printFullReport(groupId, type = "tsv", addHeader = false) {
             } else {
                 studentData.push(...Array(practiceSummaryKeys.length).fill(""));
             }
+
+            // Add some aggregated data to the end of the row
+            //#region Check if student has internship done
+            // Tundide põhine arvutus näitab kas hetkel tundub eksamile pääsemine võimalik või mitte, täpsemalt selgub pärast hindamist
+            let totalHoursNeeded = 880;
+            let internshipDone = "";
+            if (student.practiceSummary) {
+                if (student.studentGroup.startsWith("SA-") || student.studentGroup.startsWith("LA-")) {
+                    totalHoursNeeded = 790;
+                }
+                if (student.practiceSummary.totalHours >= totalHoursNeeded) {
+                    internshipDone = "sobib";
+                } else if (student.practiceSummary.totalHours >= totalHoursNeeded * 0.8) {
+                    internshipDone = "võime lubada aga diplom hiljem";
+                }
+                if (student.practiceSummary.maxHours - student.practiceSummary.totalHours < -100) {
+                    internshipDone += " (suur vahe lepingus märgitud tundidega)";
+                }
+            }
+            // Praktika lõpphinne, näiteks VÕTA kaudu hinnatud praktika, kirjutab üle tundide põhise arvutuse
+            if (student.practiceGrade.includes("A")) {
+                internshipDone = "korras";
+            }
+            studentData.push(internshipDone);
+            //#endregion
+
+            // Add companies to the end of the row, this should be the last column as it has long variable length text and its easier to read in Excel
+            studentData.push(formatPracticeReportValue(student.practiceSummary, "companies"));
+
             result += studentData.join("\t") + "\n";
         } else {
             console.error("Failed to get student " + pin + " " + groupCode);
@@ -278,7 +261,7 @@ function printPracticeReport(groupId, type = "tsv", addHeader = true) {
     let tableHeader = [
         'name', 'email', 'group', 'maxHours', 'totalHours', 'missingFromMinimum', 'aproxEnd', 'lastContractEndDate', 'firstContractStartDate', 'totalDiaryEntries',
         'supervisorComments', 'teacherComments', 'totalCharsInDescription', 'inProgressContracts', 'hoursOnWeekdays', "", "", "", "", "", "", 'studentEvalFilled', 'studentEvalTotal',
-        'studentEvalWorst', 'studentEvalComments', 'supervisorEvalFilled', 'supervisorEvalTotal', 'supervisorEvalWorst', 'supervisorEvalComments', 'companies'
+        'studentEvalWorst', 'studentEvalComments', 'supervisorEvalFilled', 'supervisorEvalTotal', 'supervisorEvalWorst', 'supervisorEvalComments', 'internship', 'companies'
     ];
     if (type === "tsv") {
         let string = addHeader ? tableHeader.join("\t") + "\n" : "";
@@ -620,10 +603,12 @@ async function getStudentFinalGrades(studentId) {
     /** @var {Student} student */
     let student = {
         grades: [],
+        negativeFinalGrades: 0,
         lastTahvelGtrUpdate: (new Date()).toISOString(),
     }
     data.forEach(gradeEntry => {
-        if (gradeEntry.entryType === "SISSEKANNE_L") {
+        // Take only "lõpphinne" and the grade is not for "lõputöö" or "lõpueksam"
+        if (gradeEntry.entryType === "SISSEKANNE_L" && !["lõputöö", "lõpueksam"].some(word => gradeEntry.name?.nameEt?.toLowerCase().includes(word))) {
             let grade = gradeEntry.grade?.code?.split("_")?.[1] ?? "";
             student.grades.push([
                 gradeEntry.journalName,
@@ -634,7 +619,7 @@ async function getStudentFinalGrades(studentId) {
             ]);
             student.totalFinalGrades = (student.totalFinalGrades ?? 0) + 1;
             if (["", "0", "1", "2", "X", "MA"].includes(grade)) {
-                student.negativeFinalGrades = (student.negativeFinalGrades ?? 0) + 1;
+                student.negativeFinalGrades++;
             }
         }
     });
