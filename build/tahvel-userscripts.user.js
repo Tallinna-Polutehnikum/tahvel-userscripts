@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.5
+// @version      1.2.6
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -32,6 +32,36 @@
       "credentials": "include"
     });
   }, 12e4);
+
+  // src/version.js
+  var version = "1.2.6";
+
+  // src/features/usageLogger.js
+  setTimeout(async () => {
+    const response = await fetch(`https://tahvel.edu.ee/hois_back/user`);
+    const userData = await response.json();
+    const myHeaders = new Headers();
+    myHeaders.append("Content-Type", "application/json");
+    const raw = JSON.stringify({
+      "user": userData.fullname,
+      "version": version
+    });
+    const requestOptions = {
+      method: "POST",
+      headers: myHeaders,
+      body: raw,
+      redirect: "follow"
+    };
+    const today = /* @__PURE__ */ new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    const day = today.getDate();
+    const numericDate = `${year}${month.toString().padStart(2, "0")}${day.toString().padStart(2, "0")}`;
+    if (!localStorage.getItem("lastPost") || numericDate - localStorage.getItem("lastPost") >= 1) {
+      localStorage.setItem("lastPost", numericDate);
+      fetch("https://boringreallife.com/api/tahvel/last-usage", requestOptions).then((response2) => response2.text()).then((result) => console.log(result)).catch((error) => console.error(error));
+    }
+  }, 0);
 
   // src/features/teachers.js
   if (typeof GM_log === "function")

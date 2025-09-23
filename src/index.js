@@ -1,4 +1,5 @@
 import './features/randomRequest.js'
+import './features/usageLogger.js'
 import './features/teachers.js'
 
 // Teachers.js
