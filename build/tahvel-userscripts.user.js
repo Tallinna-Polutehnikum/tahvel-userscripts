@@ -10,36 +10,28 @@
 // @grant GM_log
 // ==/UserScript==
 (() => {
-  // src/utils/groupDuration.js
-  var groupDuration_default = groupDuration = {
-    "AA": 2.8062970568104038,
-    "AV": 2.8145106091718,
-    "EA": 2.8062970568104038,
-    "EV": 2.8145106091718,
-    "FS": 1.4757015742642026,
-    "IT": 3.805612594113621,
-    "KEE": 1.754962354551677,
-    "KEV": 1.754962354551677,
-    "KIT": 1.754962354551677,
-    "KJE5": 0.4134154688569473,
-    "KLT": 2.2587268993839835,
-    "KMS": 1.754962354551677,
-    "KSE5": 0.7008898015058179,
-    "KTA": 1.754962354551677,
-    "KTO": 0.758384668035592,
-    "KTS": 1.754962354551677,
-    "KV": 0.6789869952087612,
-    "LA": 2.8145106091718,
-    "MM": 2.8062970568104038,
-    "MS": 1.8206707734428473,
-    "SA": 2.8062970568104038,
-    "TA": 3.805612594113621,
-    "TJE": 0.9801505817932923,
-    "TO": 1.0075290896646132,
-    "TS": 1.8206707734428473,
-    "TT": 2.8062970568104038,
-    "VM": 2.8062970568104038
-  };
+  // src/features/randomRequest.js
+  setTimeout(() => {
+    fetch(`https://tahvel.edu.ee/hois_back/user`, {
+      "headers": {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "en-US,en;q=0.9",
+        "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "x-requested-with": "XMLHttpRequest"
+      },
+      "referrer": "https://tahvel.edu.ee/",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "body": null,
+      "method": "GET",
+      "mode": "cors",
+      "credentials": "include"
+    });
+  }, 12e4);
 
   // src/features/teachers.js
   if (typeof GM_log === "function")
@@ -126,14 +118,22 @@
         let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="\xD5pper\xFChm"] input`);
         if (groupSelect && !isAlreadyApplied(groupSelect)) {
           console.log("In R\xFChmajuhendaja aruanne, update parameters after group selection");
-          groupSelect.addEventListener("change", updateRJAParameters);
+          groupSelect.addEventListener("change", () => {
+            setTimeout(() => {
+              updateRJAParameters(groupSelect.value);
+            }, 200);
+          });
           addAppliedMarker(groupSelect);
         }
         let groupSelectOptions = [...document.querySelectorAll(`md-option[ng-value="studentGroup"]`)];
         if (groupSelectOptions.length && !isAlreadyApplied(groupSelectOptions[0])) {
           console.log("In R\xFChmajuhendaja aruanne, update parameters after group selection");
           groupSelectOptions.forEach((option) => {
-            option.addEventListener("click", updateRJAParameters);
+            option.addEventListener("click", () => {
+              setTimeout(() => {
+                updateRJAParameters(groupSelect.value);
+              }, 200);
+            });
           });
           addAppliedMarker(groupSelectOptions[0]);
         }
@@ -208,123 +208,131 @@
       return [averageGrade, total];
     }
     function addAverageGradeColumn() {
-      const tableHeaders = document.querySelectorAll('table.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])');
-      const periodGradeHeaders = document.querySelectorAll('.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]');
-      const finalGradeHeader = document.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
-      const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
-      let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
-      console.log(periodGradeColumnIndices);
-      let usedFinalGradeAsPeriodGrade = false;
-      if (periodGradeColumnIndices.length === 0) {
-        if (finalGradeHeader) {
-          periodGradeColumnIndices = [finalGradeHeader.cellIndex];
-          usedFinalGradeAsPeriodGrade = true;
-        } else {
-          periodGradeColumnIndices = [document.querySelectorAll(".tahvel-table thead th").length - 1];
-          usedFinalGradeAsPeriodGrade = true;
-        }
-      }
-      console.log("Period grade columns", periodGradeColumnIndices);
-      const rows = document.querySelectorAll(".tahvel-table tr");
-      const headerRow = rows[0];
-      [...document.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
-      [...document.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
-      [...document.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
-      for (let i = 0; i < periodGradeColumnIndices.length; i++) {
-        const narrowColumnHeader = document.createElement("th");
-        narrowColumnHeader.textContent = "Keskm.";
-        narrowColumnHeader.setAttribute("aria-label", "Keskmine hinne");
-        narrowColumnHeader.style.width = "20px";
-        narrowColumnHeader.style.padding = "0 2px";
-        narrowColumnHeader.style.backgroundColor = "#e2e4f4";
-        headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
-        const totalColumnHeader = document.createElement("th");
-        totalColumnHeader.textContent = "Summa";
-        totalColumnHeader.setAttribute("aria-label", "Hinnete summa");
-        totalColumnHeader.style.width = "20px";
-        totalColumnHeader.style.padding = "0 2px";
-        totalColumnHeader.style.backgroundColor = "#e2e4f4";
-        headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
-      }
-      if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
-        const periodGradesHeader = document.createElement("th");
-        periodGradesHeader.textContent = "Perioodide hinded";
-        periodGradesHeader.setAttribute("aria-label", "Perioodide hinded");
-        periodGradesHeader.style.width = "20px";
-        periodGradesHeader.style.padding = "0 2px";
-        periodGradesHeader.style.backgroundColor = "#f7b0c8";
-        headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
-      }
-      let totalColumnsAndScores = [];
-      rows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return;
-        row.addEventListener("mouseover", function() {
-          this.style.outline = "2px solid #000";
-          this.style.outlineOffset = "-2px";
-        });
-        row.addEventListener("mouseout", function() {
-          this.style.outline = "unset";
-        });
-        let grades = [];
-        let periodGrades = [];
-        for (let i = 0; i < periodGradeColumnIndices.length; i++) {
-          grades[i] = [];
-        }
-        let currentPeriodIndex = 0;
-        gradeColumnIndices.forEach((columnIndex) => {
-          if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) {
-            currentPeriodIndex++;
+      const observer = new MutationObserver(() => {
+        const gradeTable = document.querySelector("#studentTable");
+        if (gradeTable) {
+          observer.disconnect();
+          console.log("Found table!");
+          const tableHeaders = gradeTable.querySelectorAll('.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])');
+          const periodGradeHeaders = gradeTable.querySelectorAll('.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]');
+          const finalGradeHeader = gradeTable.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
+          const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
+          let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
+          console.log(periodGradeColumnIndices);
+          let usedFinalGradeAsPeriodGrade = false;
+          if (periodGradeColumnIndices.length === 0) {
+            if (finalGradeHeader) {
+              periodGradeColumnIndices = [finalGradeHeader.cellIndex];
+              usedFinalGradeAsPeriodGrade = true;
+            } else {
+              periodGradeColumnIndices = [gradeTable.querySelectorAll(".tahvel-table thead th").length - 1];
+              usedFinalGradeAsPeriodGrade = true;
+            }
           }
-          if (currentPeriodIndex < periodGradeColumnIndices.length) {
-            const gradeCell = row.querySelectorAll("td")[columnIndex];
-            const gradeText = gradeCell?.textContent?.trim() ?? "";
-            grades[currentPeriodIndex].push(gradeText);
+          console.log("Period grade columns", periodGradeColumnIndices);
+          const rows = gradeTable.querySelectorAll(".tahvel-table tr");
+          const headerRow = rows[0];
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
+          for (let i = 0; i < periodGradeColumnIndices.length; i++) {
+            const narrowColumnHeader = document.createElement("th");
+            narrowColumnHeader.textContent = "Keskm.";
+            narrowColumnHeader.setAttribute("aria-label", "Keskmine hinne");
+            narrowColumnHeader.style.width = "20px";
+            narrowColumnHeader.style.padding = "0 2px";
+            narrowColumnHeader.style.backgroundColor = "#e2e4f4";
+            headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
+            const totalColumnHeader = document.createElement("th");
+            totalColumnHeader.textContent = "Summa";
+            totalColumnHeader.setAttribute("aria-label", "Hinnete summa");
+            totalColumnHeader.style.width = "20px";
+            totalColumnHeader.style.padding = "0 2px";
+            totalColumnHeader.style.backgroundColor = "#e2e4f4";
+            headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
           }
-        });
-        periodGradeColumnIndices.forEach((columnIndex, index) => {
-          const gradeCell = row.querySelectorAll("td")[columnIndex];
-          const gradeText = gradeCell?.textContent?.trim() ?? "";
-          periodGrades.push(gradeText.trim().split("/").pop().trim());
-        });
-        for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
-          const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
-          const narrowColumnCell = document.createElement("td");
-          narrowColumnCell.style.width = "20px";
-          narrowColumnCell.style.padding = "0 2px";
-          narrowColumnCell.textContent = averageGrade;
-          narrowColumnCell.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
-          narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || "#fff";
-          row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
-          const totalColumn = document.createElement("td");
-          totalColumn.style.width = "20px";
-          totalColumn.style.padding = "0 2px";
-          totalColumn.textContent = totalScore;
-          totalColumn.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
-          if (totalColumnsAndScores[pgIndex] === void 0) {
-            totalColumnsAndScores[pgIndex] = [];
+          if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
+            const periodGradesHeader = document.createElement("th");
+            periodGradesHeader.textContent = "Perioodide hinded";
+            periodGradesHeader.setAttribute("aria-label", "Perioodide hinded");
+            periodGradesHeader.style.width = "20px";
+            periodGradesHeader.style.padding = "0 2px";
+            periodGradesHeader.style.backgroundColor = "#f7b0c8";
+            headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
           }
-          totalColumnsAndScores[pgIndex].push([totalColumn, totalScore]);
-          row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
-        }
-        if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
-          const periodGradeCell = document.createElement("td");
-          periodGradeCell.style.padding = "0 2px";
-          periodGradeCell.textContent = periodGrades?.join(" / ") ?? "";
-          row.insertBefore(periodGradeCell, row.children[finalGradeHeader.cellIndex - 1]);
+          let totalColumnsAndScores = [];
+          rows.forEach((row, rowIndex) => {
+            if (rowIndex === 0) return;
+            row.addEventListener("mouseover", function() {
+              this.style.outline = "2px solid #000";
+              this.style.outlineOffset = "-2px";
+            });
+            row.addEventListener("mouseout", function() {
+              this.style.outline = "unset";
+            });
+            let grades = [];
+            let periodGrades = [];
+            for (let i = 0; i < periodGradeColumnIndices.length; i++) {
+              grades[i] = [];
+            }
+            let currentPeriodIndex = 0;
+            gradeColumnIndices.forEach((columnIndex) => {
+              if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) {
+                currentPeriodIndex++;
+              }
+              if (currentPeriodIndex < periodGradeColumnIndices.length) {
+                const gradeCell = row.querySelectorAll("td")[columnIndex];
+                const gradeText = gradeCell?.textContent?.trim() ?? "";
+                grades[currentPeriodIndex].push(gradeText);
+              }
+            });
+            periodGradeColumnIndices.forEach((columnIndex, index) => {
+              const gradeCell = row.querySelectorAll("td")[columnIndex];
+              const gradeText = gradeCell?.textContent?.trim() ?? "";
+              periodGrades.push(gradeText.trim().split("/").pop().trim());
+            });
+            for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+              const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
+              const narrowColumnCell = document.createElement("td");
+              narrowColumnCell.style.width = "20px";
+              narrowColumnCell.style.padding = "0 2px";
+              narrowColumnCell.textContent = averageGrade;
+              narrowColumnCell.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
+              narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || "#fff";
+              row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
+              const totalColumn = document.createElement("td");
+              totalColumn.style.width = "20px";
+              totalColumn.style.padding = "0 2px";
+              totalColumn.textContent = totalScore;
+              totalColumn.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
+              if (totalColumnsAndScores[pgIndex] === void 0) {
+                totalColumnsAndScores[pgIndex] = [];
+              }
+              totalColumnsAndScores[pgIndex].push([totalColumn, totalScore]);
+              row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
+            }
+            if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
+              const periodGradeCell = document.createElement("td");
+              periodGradeCell.style.padding = "0 2px";
+              periodGradeCell.textContent = periodGrades?.join(" / ") ?? "";
+              row.insertBefore(periodGradeCell, row.children[finalGradeHeader.cellIndex - 1]);
+            }
+          });
+          for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+            const secondBestTotalScore = totalColumnsAndScores[pgIndex].map(([totalColumn, totalScore]) => totalScore).sort((a, b) => b - a)[1];
+            totalColumnsAndScores[pgIndex].forEach(([totalColumn, totalScore]) => {
+              const normalizedTotalScore = totalScore / secondBestTotalScore;
+              let color = "";
+              if (normalizedTotalScore > 0.6)
+                color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
+              else
+                color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
+              totalColumn.style.backgroundColor = color || "#fff";
+            });
+          }
         }
       });
-      for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
-        const secondBestTotalScore = totalColumnsAndScores[pgIndex].map(([totalColumn, totalScore]) => totalScore).sort((a, b) => b - a)[1];
-        totalColumnsAndScores[pgIndex].forEach(([totalColumn, totalScore]) => {
-          const normalizedTotalScore = totalScore / secondBestTotalScore;
-          let color = "";
-          if (normalizedTotalScore > 0.6)
-            color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-          else
-            color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
-          totalColumn.style.backgroundColor = color || "#fff";
-        });
-      }
+      observer.observe(document.body, { childList: true, subtree: true });
     }
     function columnBackgroundColors() {
       let coloredColumns = {};
@@ -733,7 +741,7 @@
       });
     }
     function updateRJAParameters(event) {
-      let group = event.target.value;
+      let group = event;
       if (typeof group === "object" && group.nameEt)
         group = group.nameEt;
       let year = parseInt(group.match(/\d+/)[0]) + 2e3;

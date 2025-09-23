@@ -1,4 +1,3 @@
-
 console.log = GM_log;
 
 const ContractStatus = {
