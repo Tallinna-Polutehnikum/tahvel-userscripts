@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch"
+  },
+  "type": "module"
+}

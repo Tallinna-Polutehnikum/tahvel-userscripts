@@ -1,15 +1,3 @@
-// ==UserScript==
-// @name         Täiendatud Tahvel Praktikaaruanne
-// @namespace    https://tahvel.edu.ee/
-// @version      1.2.0
-// @description  Detailsem praktikate ülevaade
-// @author       Timo Triisa
-// @match        https://tahvel.edu.ee/*
-// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/praktikaaruanne.js
-// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/praktikaaruanne.js
-// @grant GM_log
-// ==/UserScript==
-
 console.log = GM_log;
 
 const ContractStatus = {
