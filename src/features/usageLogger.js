@@ -27,11 +27,13 @@ setTimeout(async () => {
   // Format as YYYYMMDD
   const numericDate = `${year}${month.toString().padStart(2, '0')}${day.toString().padStart(2, '0')}`;
 
-  if(!localStorage.getItem('lastPost') || ((numericDate - localStorage.getItem('lastPost')) >= 1)) {
-    localStorage.setItem('lastPost', numericDate);
-    fetch("https://boringreallife.com/api/tahvel/last-usage", requestOptions)
-      .then((response) => response.text())
-      .then((result) => console.log(result))
-      .catch((error) => console.error(error));
+  if(!['ROLL_T', 'ROLL_X', 'ROLL_L'].includes(userData.roleCode)){
+    if(!localStorage.getItem('lastPost') || ((numericDate - localStorage.getItem('lastPost')) >= 1)) {
+      localStorage.setItem('lastPost', numericDate);
+      fetch("https://boringreallife.com/api/tahvel/last-usage", requestOptions)
+        .then((response) => response.text())
+        .then((result) => console.log(result))
+        .catch((error) => console.error(error));
+    }
   }
 }, 0)

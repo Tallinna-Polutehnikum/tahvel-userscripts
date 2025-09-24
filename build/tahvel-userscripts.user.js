@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.6
+// @version      1.2.7
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
-// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/blob/build/tahvel-userscripts.user.js
-// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/blob/build/tahvel-userscripts.user.js
+// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
+// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
 // @grant GM_log
 // ==/UserScript==
 (() => {
@@ -34,7 +34,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.2.6";
+  var version = "1.2.7";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -57,9 +57,11 @@
     const month = today.getMonth() + 1;
     const day = today.getDate();
     const numericDate = `${year}${month.toString().padStart(2, "0")}${day.toString().padStart(2, "0")}`;
-    if (!localStorage.getItem("lastPost") || numericDate - localStorage.getItem("lastPost") >= 1) {
-      localStorage.setItem("lastPost", numericDate);
-      fetch("https://boringreallife.com/api/tahvel/last-usage", requestOptions).then((response2) => response2.text()).then((result) => console.log(result)).catch((error) => console.error(error));
+    if (!["ROLL_T", "ROLL_X", "ROLL_L"].includes(userData.roleCode)) {
+      if (!localStorage.getItem("lastPost") || numericDate - localStorage.getItem("lastPost") >= 1) {
+        localStorage.setItem("lastPost", numericDate);
+        fetch("https://boringreallife.com/api/tahvel/last-usage", requestOptions).then((response2) => response2.text()).then((result) => console.log(result)).catch((error) => console.error(error));
+      }
     }
   }, 0);
 
