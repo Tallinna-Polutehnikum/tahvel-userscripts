@@ -1,6 +1,7 @@
 import './features/randomRequest.js'
 import './features/usageLogger.js'
 import './features/teachers.js'
+import './features/gradeHistory.js'
 
 // Teachers.js
 /**
