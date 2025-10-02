@@ -7,5 +7,6 @@
 // @match        https://tahvel.edu.ee/*
 // @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
 // @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
-// @grant GM_log
+// @grant        GM_log
+// @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
