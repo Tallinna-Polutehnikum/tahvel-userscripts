@@ -37,25 +37,66 @@ let exampleData = {
   ]
 }
 
+// Inject CSS
+const gradeHistoryStyle = document.createElement('style');
+gradeHistoryStyle.textContent = `
+  .chart-container {
+    position: relative;
+    height: 400px;
+    margin: 2px;
+    border: 1px solid #d9d9d6;
+  }
+  .graph-container {
+    width: 100%;
+    height: 90%;
+  }
+  .login-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px); /* Modern browsers - blurs background */
+    z-index: 1;
+  }
+  .login-box {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    width: 300px;
+    height: 200px;
+    text-align: center;
+  }
+`;
+document.head.appendChild(gradeHistoryStyle);
+
 let hash = window.location.hash;
 
 let simpleMode = true;
 let graphType = 'grades';
 
-function createGraph() {
+function createGradeHistory() {
   if(hash.includes('/results') || hash.includes('/myResults')) {
     const init = () => {
       const mainContent = document.querySelector('#main-content');
       const fieldSet = mainContent?.querySelector('fieldset');
 
       if (mainContent && fieldSet) {
+        let elements;
         let graph = mainContent.querySelector('#gradeHistoryGraph');
 
         if (!graph) {
-          graph = createGraphElements(fieldSet);
+          elements = createGraphElements(fieldSet);
+          graph = elements.graph;
         }
 
         initChart(graph);
+        manageLogin(elements);
         return true;
       }
       return false;
@@ -72,12 +113,21 @@ function createGraph() {
   }
 }
 
-createGraph();
+createGradeHistory();
 
 window.addEventListener("hashchange", () => {
   hash = window.location.hash;
-  createGraph();
+  createGradeHistory();
 });
+
+function manageLogin(elements) {
+  let isLoggedin = false; // TODO: add login check by createing a api endpoint to check it
+
+  if(!isLoggedin) {
+    elements.loginOverlay.style.display = 'flex';
+    return
+  }
+}
 
 function processData(data) {
   let processedData = {
@@ -192,11 +242,35 @@ function graphData(data, graphType) {
 }
 
 function createGraphElements(previousElement) {
-  // Create graph main element
+  // Create grade history container
   const gradeHistory = document.createElement('div');
-  gradeHistory.style.border = "1px solid #d9d9d6";
-  gradeHistory.style.margin = "2px";
-  gradeHistory.id = 'graphContainer';
+  gradeHistory.id = 'gradeHistoryContainer';
+  gradeHistory.className = 'chart-container';
+
+  // Create login container
+  const loginOverlay = document.createElement('div');
+  loginOverlay.id = 'loginOverlay';
+  loginOverlay.className = 'login-overlay';
+  loginOverlay.style.display = 'none';
+
+  // Create graph container
+  const graphContainer = document.createElement('div');
+  graphContainer.id = 'graphContainer';
+  graphContainer.className = 'graph-container';
+
+  // Create login content
+  const loginContent = document.createElement('div');
+  loginContent.id = 'loginContent';
+  loginContent.className = 'login-box';
+  const loginText = document.createElement('h1');
+  loginText.textContent = 'Logi sisse hinnete ajaloo nägemiseks';
+  const loginBtn = document.createElement('a');
+  loginBtn.id = 'loginBtn';
+  loginBtn.className = 'md-raised md-primary md-button md-ink-ripple';
+  loginBtn.text = 'Logi sisse';
+
+  loginContent.appendChild(loginText);
+  loginContent.appendChild(loginBtn);
 
   // Create graph controlls
   const graphControlls = document.createElement('div');
@@ -228,13 +302,22 @@ function createGraphElements(previousElement) {
   // Create graph
   const graph = document.createElement('canvas');
   graph.id = 'gradeHistoryGraph';
-  graph.height = 75;
+  graph.height = '100%';
+  graph.width = '100%';
+  graph.style.margin = '2px';
 
-  gradeHistory.appendChild(graphControlls);
-  gradeHistory.appendChild(graph);
+  // Create login form
+  graphContainer.appendChild(graphControlls);
+  graphContainer.appendChild(graph);
+
+  loginOverlay.appendChild(loginContent);
+
+  gradeHistory.appendChild(graphContainer);
+  gradeHistory.appendChild(loginOverlay);
+
   previousElement.after(gradeHistory);
 
-  return graph
+  return {graph, loginOverlay, graphContainer}
 }
 
 function initChart(graph) {
