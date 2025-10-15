@@ -1,7 +1,7 @@
-import './features/randomRequest.js'
-import './features/usageLogger.js'
-import './features/teachers.js'
-import './features/gradeHistory.js'
+import './features/randomRequest.js';
+import './features/usageLogger.js';
+import './features/teachers.js';
+import './features/gradeHistory.js';
 
 // Teachers.js
 /**
@@ -14,7 +14,6 @@ import './features/gradeHistory.js'
  *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
  *  - Kõige põhjas (faili lõpus) on re-usable asjad
  */
-
 
 // Features:
 // - Päevikus näeb õpilase keskmist hinnet (nüüd ka ilma perioodihindeta)
