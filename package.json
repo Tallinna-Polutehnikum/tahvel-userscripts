@@ -1,10 +1,23 @@
 {
   "devDependencies": {
-    "esbuild": "0.25.9"
+    "esbuild": "0.25.9",
+    "prettier": "^3.6.2"
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "watch": "node esbuild.config.mjs --watch"
+    "watch": "node esbuild.config.mjs --watch",
+    "format": "npx prettier --write ."
+  },
+  "prettier": {
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": true,
+    "singleQuote": true,
+    "quoteProps": "consistent",
+    "bracketSpacing": true,
+    "objectWrap": "collapse",
+    "arrowParens": "avoid",
+    "printWidth": 125
   },
   "type": "module"
 }
