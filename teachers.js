@@ -5,6 +5,7 @@
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
+// @match        https://tahveltp.edu.ee/*
 // @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
 // @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js
 // @grant GM_log
@@ -989,12 +990,12 @@ if (typeof GM_log === 'function')
                 let percentage = negativeFinalGrades / totalFinalGrades * 100;
                 negativeFinalGradePercentageCell.textContent = percentage.toFixed(1) + "%";
                 // set color based on percentage, 0 green, 0-10 yellow, 10-30 orange, 30+ red white text, 50+ black bg white text
-                negativeFinalGradePercentageCell.style.backgroundColor = 
-                    percentage > 50 ? "black" : 
-                    percentage > 30 ? "#ff3333" : 
-                    percentage > 10 ? "orange" : 
-                    percentage > 0 ? "yellow" : 
-                    "#92D293";
+                negativeFinalGradePercentageCell.style.backgroundColor =
+                    percentage > 50 ? "black" :
+                        percentage > 30 ? "#ff3333" :
+                            percentage > 10 ? "orange" :
+                                percentage > 0 ? "yellow" :
+                                    "#92D293";
                 negativeFinalGradePercentageCell.style.color = percentage > 30 ? "white" : "black";
                 row.insertBefore(negativeFinalGradePercentageCell, row.children[columnDataOffset + colspan]);
                 row.insertBefore(negativeFinalGradeCell, row.children[columnDataOffset + colspan]);
@@ -1179,6 +1180,111 @@ if (typeof GM_log === 'function')
     addXHRInterceptor(url => url.match(/hois_back\/students\/\d+$/) !== null, data => {
         currentStudent = data;
     });
+    //#endregion
+
+    //#region
+    function cloneCellStyle(fromEl, toEl) {
+        const computedStyle = window.getComputedStyle(fromEl);
+        toEl.style.padding = computedStyle.padding;
+        toEl.style.font = computedStyle.font;
+        toEl.style.verticalAlign = computedStyle.verticalAlign;
+        toEl.style.lineHeight = computedStyle.lineHeight;
+        toEl.style.height = computedStyle.height;
+        toEl.style.borderTop = computedStyle.borderTop;
+        toEl.style.borderBottom = computedStyle.borderBottom;
+        toEl.style.textAlign = computedStyle.textAlign;
+    }
+
+    function injectSeatInfoToColumn(roomData) {
+        const table = document.querySelector("table.md-table");
+        const firstRow = table?.querySelector("tbody tr");
+
+        if (!table || !firstRow || isAlreadyApplied(table)) return;
+
+        const headerCells = table.querySelectorAll("thead th");
+        const headers = Array.from(headerCells).map(th =>
+                                                    th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
+                                                   );
+
+        const roomColIndex = headers.findIndex(text => text === "ruum");
+        const seatsColIndex = headers.findIndex(text => text === "kohtadearv");
+
+        if (roomColIndex === -1 || seatsColIndex === -1) return;
+
+        const headerRow = table.querySelector("thead tr");
+
+        // Lisa uus päise veerg: Arvuteid (positsioon 3)
+        const computersHeader = document.createElement("th");
+        computersHeader.textContent = "Arvuteid";
+        headerRow.insertBefore(computersHeader, headerRow.children[3]);
+        cloneCellStyle(headerRow.children[2], computersHeader);
+
+        // Lisa uus päise veerg: Pindala (positsioon 4)
+        const areaHeader = document.createElement("th");
+        areaHeader.textContent = "Pindala";
+        headerRow.insertBefore(areaHeader, headerRow.children[4]);
+        cloneCellStyle(headerRow.children[2], areaHeader);
+
+        // Lisa uus päise veerg: Arvuteid (positsioon 5)
+        const boardHeader = document.createElement("th");
+        boardHeader.textContent = "Tahvel";
+        headerRow.insertBefore(boardHeader, headerRow.children[5]);
+        cloneCellStyle(headerRow.children[2], boardHeader);
+
+        // Lisa uus päise veerg: Pindala (positsioon 6)
+        const osHeader = document.createElement("th");
+        osHeader.textContent = "OS";
+        headerRow.insertBefore(osHeader, headerRow.children[6]);
+        cloneCellStyle(headerRow.children[2], osHeader);
+
+        const rows = table.querySelectorAll("tbody tr");
+        rows.forEach(row => {
+            const cells = row.querySelectorAll("td");
+            const roomCell = cells[roomColIndex];
+            const roomText = roomCell?.textContent.trim() ?? "";
+
+            const match = roomData.find(r => r.roomNumber === roomText);
+
+            // Täida kohtade arv, kui match leitud
+            if (match && cells[seatsColIndex]) {
+                cells[seatsColIndex].textContent = `${match.seats}`;
+            }
+
+            // Lisa uus lahter: arvutite arv
+            const computersCell = document.createElement("td");
+            computersCell.textContent = match?.computers ?? "";
+            row.insertBefore(computersCell, row.children[3]);
+            cloneCellStyle(row.children[2], computersCell);
+
+            // Lisa uus lahter: pindala
+            const areaCell = document.createElement("td");
+            areaCell.textContent = match?.area ? `${match.area}m²` : "";
+            row.insertBefore(areaCell, row.children[4]);
+            cloneCellStyle(row.children[2], areaCell);
+
+            // Lisa uus lahter: tahvel
+            const boardCell = document.createElement("td");
+            boardCell.textContent = match?.board ?? "";
+            row.insertBefore(boardCell, row.children[5]);
+            cloneCellStyle(row.children[2], boardCell);
+
+            // Lisa uus lahter: os
+            const osCell = document.createElement("td");
+            osCell.textContent = match?.os ?? "";
+            row.insertBefore(osCell, row.children[6]);
+            cloneCellStyle(row.children[2], osCell);
+        });
+
+        addAppliedMarker(table);
+    }
+
+    if (location.hash.startsWith('#/lessonplans/rooms')) {
+        observeTargetChange(document.body, () => {
+            injectSeatInfoToColumn([
+                {"roomNumber":"A101","seats":"35","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A102","seats":"16","computers":"9","area":"58","board":"valgetahvel","os":"Windows"},{"roomNumber":"A107","seats":"20","computers":"21","area":"72","board":"valgetahvel","os":"Windows"},{"roomNumber":"A108","seats":"30","computers":"31","area":"66","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A111","seats":"20","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A116","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A117","seats":"18","computers":"","area":"52","board":"","os":"Windows"},{"roomNumber":"A118","seats":"20","computers":"","area":"58","board":"puudub","os":"Windows"},{"roomNumber":"A201","seats":"34","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A202","seats":"50","computers":"1","area":"76","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A209","seats":"30","computers":"1","area":"45","board":"valgetahvel","os":"Windows"},{"roomNumber":"A210","seats":"24","computers":"23","area":"43","board":"","os":"Windows"},{"roomNumber":"A213","seats":"16","computers":"","area":"48","board":"puudub","os":""},{"roomNumber":"A216","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A217","seats":"34","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A301","seats":"34","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A302","seats":"34","computers":"35","area":"75","board":"valgetahvel","os":"Windows"},{"roomNumber":"A303","seats":"15","computers":"","area":"??","board":"","os":""},{"roomNumber":"A304","seats":"38","computers":"1","area":"54","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A306","seats":"35","computers":"1","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A307","seats":"16","computers":"17","area":"55","board":"valgetahvel","os":"Windows"},{"roomNumber":"A308","seats":"32","computers":"33","area":"53","board":"valgetahvel","os":"Windows"},{"roomNumber":"A309","seats":"15","computers":"18","area":"51","board":"valgetahvel","os":"Windows"},{"roomNumber":"A310","seats":"36","computers":"1","area":"45","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A311","seats":"34","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A314","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A315","seats":"36","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A401","seats":"30","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A402","seats":"30","computers":"31","area":"78","board":"valgetahvel","os":"Windows"},{"roomNumber":"A404","seats":"36","computers":"1","area":"55","board":"valgetahvel","os":"Windows"},{"roomNumber":"A403","seats":"15","computers":"","area":"??","board":"","os":""},{"roomNumber":"A405","seats":"26","computers":"1","area":"45","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A406","seats":"34","computers":"1","area":"42","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A407","seats":"140","computers":"1","area":"163","board":"","os":"Windows"},{"roomNumber":"A410","seats":"34","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A414","seats":"16","computers":"1","area":"38","board":"","os":"Windows"},{"roomNumber":"A415","seats":"36","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A002","seats":"30","computers":"58","area":"139","board":"","os":"Windows"},{"roomNumber":"A003","seats":"9","computers":"1","area":"30","board":"","os":"Windows"},{"roomNumber":"A007a007b","seats":"7","computers":"","area":"20","board":"","os":""},{"roomNumber":"A008","seats":"20","computers":"1","area":"95","board":"","os":"Windows"},{"roomNumber":"A008a","seats":"0","computers":"","area":"20","board":"","os":""},{"roomNumber":"A009","seats":"8","computers":"2","area":"37","board":"","os":"OS X"},{"roomNumber":"A010","seats":"6","computers":"1","area":"47","board":"","os":"Windows"},{"roomNumber":"B036038","seats":"0","computers":"","area":"78","board":"","os":""},{"roomNumber":"B046","seats":"30","computers":"20","area":"104","board":"valgetahvel","os":"Windows"},{"roomNumber":"B047","seats":"0","computers":"1","area":"36","board":"valgetahvel","os":"Windows"},{"roomNumber":"B100","seats":"36","computers":"","area":"369","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"T411","seats":"30","computers":"31","area":"52","board":"puudub","os":"Windows"},{"roomNumber":"T412","seats":"31","computers":"31","area":"65","board":"puudub","os":"Windows"},{"roomNumber":"T413","seats":"0","computers":"","area":"100","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"B113","seats":"40","computers":"16","area":"110","board":"","os":"Windows"},{"roomNumber":"B116","seats":"2","computers":"","area":"","board":"","os":""},{"roomNumber":"B200","seats":"4","computers":"1","area":"46","board":"","os":"OS X"},{"roomNumber":"B201","seats":"24","computers":"","area":"76","board":"","os":"OS X"},{"roomNumber":"B202","seats":"7","computers":"","area":"37","board":"","os":""},{"roomNumber":"B204","seats":"4","computers":"","area":"37","board":"","os":""},{"roomNumber":"B206","seats":"20","computers":"21","area":"37","board":"valgetahvel","os":"OS X"},{"roomNumber":"B207","seats":"8","computers":"","area":"37","board":"","os":""},{"roomNumber":"B210","seats":"12","computers":"12","area":"38","board":"valgetahvel","os":"OS X"},{"roomNumber":"B211","seats":"32","computers":"1","area":"55","board":"valgetahvel","os":"OS X"},{"roomNumber":"B306","seats":"25","computers":"27","area":"55","board":"valgetahvel","os":"OS X"},{"roomNumber":"B307","seats":"31","computers":"31","area":"56","board":"valgetahvel","os":"Windows"},{"roomNumber":"B315","seats":"20","computers":"21","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B316","seats":"16","computers":"17","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B317","seats":"10","computers":"","area":"38","board":"","os":""},{"roomNumber":"B318","seats":"18","computers":"19","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B405","seats":"32","computers":"1","area":"55","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B407","seats":"32","computers":"","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B409","seats":"28","computers":"1","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B414","seats":"18","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B416","seats":"28","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B417","seats":"36","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B508","seats":"8","computers":"4","area":"24","board":"","os":"OS X"},{"roomNumber":"B510","seats":"16","computers":"16","area":"48","board":"","os":"OS X"},{"roomNumber":"B511","seats":"8","computers":"8","area":"24","board":"","os":"OS X"},{"roomNumber":"B512","seats":"8","computers":"8","area":"24","board":"","os":"OS X"},{"roomNumber":"B513","seats":"8","computers":"","area":"25","board":"","os":""}
+            ]);
+        });
+    }
     //#endregion
 })();
 
