@@ -323,13 +323,13 @@ function createGraphElements(previousElement) {
     graphType = graphType === 'grades' ? 'absences' : 'grades';
     graphDataBtn.text = graphDataBtn.text === 'Hinnete vaade' ? 'Puudumiste vaade' : 'Hinnete vaade';
     document.querySelector('#graphModeBtn').style.display = graphDataBtn.text === 'Hinnete vaade' ? 'inline-block' : 'none';
-    createGraph();
+    createGradeHistory();
   });
   graphModeBtn.addEventListener('click', () => {
     // Switch between simple mode true and false
     simpleMode = !simpleMode;
     graphModeBtn.text = graphModeBtn.text === 'Lihtne vaade' ? 'Täiustatud vaade' : 'Lihtne vaade';
-    createGraph();
+    createGradeHistory();
   });
 
   graphControlls.appendChild(graphDataBtn);

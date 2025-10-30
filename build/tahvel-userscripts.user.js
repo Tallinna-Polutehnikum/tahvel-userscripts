@@ -10,15 +10,14 @@
 // @grant        GM_log
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
+
 (() => {
   // src/features/randomRequest.js
   setInterval(() => {
     fetch("https://tahvel.edu.ee/hois_back/user", {
       method: "GET",
       credentials: "include",
-      headers: {
-        "accept": "application/json, text/plain, */*"
-      }
+      headers: { accept: "application/json, text/plain, */*" }
     });
     console.log("session extended at: " + /* @__PURE__ */ new Date());
   }, 12e4);
@@ -32,16 +31,8 @@
     const userData = await response.json();
     const myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    const raw = JSON.stringify({
-      "user": userData.fullname,
-      "version": version
-    });
-    const requestOptions = {
-      method: "POST",
-      headers: myHeaders,
-      body: raw,
-      redirect: "follow"
-    };
+    const raw = JSON.stringify({ user: userData.fullname, version });
+    const requestOptions = { method: "POST", headers: myHeaders, body: raw, redirect: "follow" };
     const today = /* @__PURE__ */ new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
@@ -56,8 +47,7 @@
   }, 0);
 
   // src/features/teachers.js
-  if (typeof GM_log === "function")
-    console.log = GM_log;
+  if (typeof GM_log === "function") console.log = GM_log;
   (function() {
     "use strict";
     console.log("Tahvel Customization script started");
@@ -128,13 +118,17 @@
       if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='\xD5ppekava t\xE4itmine']`)) {
         let firstModule = document.querySelector(".hois-collapse-parent div:first-of-type > span");
         if (firstModule && !isAlreadyApplied(firstModule)) {
-          console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
+          console.log(
+            "In student profile, add module and journal links",
+            currentStudent?.id != studentId,
+            currentStudent?.id,
+            studentId
+          );
           if (currentStudent?.id == studentId) {
             addAppliedMarker(firstModule);
             studentProfileModuleAndJournalLinks(studentId);
           }
         }
-        ;
       }
       if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
         let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="\xD5pper\xFChm"] input`);
@@ -172,8 +166,7 @@
         if (myJournals && !isAlreadyApplied(myJournals)) {
           console.log("In journals list, add today's journals first");
           myJournals = addMyJournals();
-          if (myJournals)
-            addAppliedMarker(myJournals);
+          if (myJournals) addAppliedMarker(myJournals);
         }
       }
     });
@@ -218,8 +211,7 @@
       let count = 0;
       grades.forEach((grade) => {
         let lastGrade = grade.trim().split("/").pop().trim();
-        if (lastGrade === "MA" || lastGrade === "X")
-          lastGrade = "0";
+        if (lastGrade === "MA" || lastGrade === "X") lastGrade = "0";
         const parsedGrade = parseFloat(lastGrade);
         if (!isNaN(parsedGrade)) {
           total += parsedGrade;
@@ -235,8 +227,12 @@
         if (gradeTable) {
           observer.disconnect();
           console.log("Found table!");
-          const tableHeaders = gradeTable.querySelectorAll('.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])');
-          const periodGradeHeaders = gradeTable.querySelectorAll('.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]');
+          const tableHeaders = gradeTable.querySelectorAll(
+            '.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])'
+          );
+          const periodGradeHeaders = gradeTable.querySelectorAll(
+            '.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]'
+          );
           const finalGradeHeader = gradeTable.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
           const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
           let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
@@ -254,9 +250,13 @@
           console.log("Period grade columns", periodGradeColumnIndices);
           const rows = gradeTable.querySelectorAll(".tahvel-table tr");
           const headerRow = rows[0];
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach(
+            (header) => header.remove()
+          );
           [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach(
+            (header) => header.remove()
+          );
           for (let i = 0; i < periodGradeColumnIndices.length; i++) {
             const narrowColumnHeader = document.createElement("th");
             narrowColumnHeader.textContent = "Keskm.";
@@ -347,8 +347,7 @@
               let color = "";
               if (normalizedTotalScore > 0.6)
                 color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-              else
-                color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
+              else color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
               totalColumn.style.backgroundColor = color || "#fff";
             });
           }
@@ -382,43 +381,49 @@
       }
       let tableBody = table?.querySelector("tbody");
       let headerRow = table.querySelector("thead tr");
-      let response1 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
-        "headers": {
-          "accept": "application/json, text/plain, */*",
-          "accept-language": "en-US,en;q=0.9",
-          "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": '"Windows"',
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "x-requested-with": "XMLHttpRequest"
-        },
-        "referrer": "https://tahvel.edu.ee/",
-        "referrerPolicy": "strict-origin-when-cross-origin",
-        "body": null,
-        "method": "GET",
-        "mode": "cors",
-        "credentials": "include"
-      });
+      let response1 = await fetch(
+        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`,
+        {
+          headers: {
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-US,en;q=0.9",
+            "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "x-requested-with": "XMLHttpRequest"
+          },
+          referrer: "https://tahvel.edu.ee/",
+          referrerPolicy: "strict-origin-when-cross-origin",
+          body: null,
+          method: "GET",
+          mode: "cors",
+          credentials: "include"
+        }
+      );
       let dataEntries = await response1.json();
-      let response2 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
-        "headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-          "Accept": "application/json, text/plain, */*",
-          "Accept-Language": "en-US,en;q=0.5",
-          "X-Requested-With": "XMLHttpRequest",
-          "Sec-Fetch-Dest": "empty",
-          "Sec-Fetch-Mode": "cors",
-          "Sec-Fetch-Site": "same-origin",
-          "Pragma": "no-cache",
-          "Cache-Control": "no-cache"
-        },
-        "referrer": "https://tahvel.edu.ee/",
-        "method": "GET",
-        "mode": "cors",
-        "credentials": "include"
-      });
+      let response2 = await fetch(
+        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "X-Requested-With": "XMLHttpRequest",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Pragma": "no-cache",
+            "Cache-Control": "no-cache"
+          },
+          referrer: "https://tahvel.edu.ee/",
+          method: "GET",
+          mode: "cors",
+          credentials: "include"
+        }
+      );
       let journalEntries = await response2.json();
       let domIndex = 0;
       let skipHeaders = ["Nr", "\xD5ppija, \xD5pper\xFChm", "Keskm.", "Summa"];
@@ -432,8 +437,7 @@
         let entry = dataEntries.content.find((dataEntry) => dataEntry.id === dateEntry.id);
         let el = entryDOMs[entryIndex];
         let entryType = SissekandedEnum[entry.entryType];
-        if (entry.nameEt !== entryType)
-          entryType += ": " + entry.nameEt;
+        if (entry.nameEt !== entryType) entryType += ": " + entry.nameEt;
         let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
         if (entry.homework) {
           let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString("et") : "";
@@ -446,8 +450,7 @@
           tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + "px";
         });
         el.addEventListener("mouseout", () => {
-          if (tooltip.style.display === "block")
-            tooltip.style.display = "none";
+          if (tooltip.style.display === "block") tooltip.style.display = "none";
         });
         let closestTH = el.parentElement;
         while (closestTH && closestTH.tagName !== "TH") {
@@ -462,8 +465,7 @@
             tooltip.style.left = event.clientX - el2.getBoundingClientRect().width / 2 + "px";
           });
           el2.addEventListener("mouseout", () => {
-            if (tooltip.style.display === "block")
-              tooltip.style.display = "none";
+            if (tooltip.style.display === "block") tooltip.style.display = "none";
           });
         }
       });
@@ -547,7 +549,11 @@
       let columnHeader = document.querySelector("[md-order-by='person.idcode']");
       if (columnHeader) {
         let columnNumber = Array.from(columnHeader.parentElement.children).indexOf(columnHeader);
-        elements = Array.from(columnHeader.parentElement.parentElement.parentElement.querySelectorAll("tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"));
+        elements = Array.from(
+          columnHeader.parentElement.parentElement.parentElement.querySelectorAll(
+            "tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"
+          )
+        );
       }
       elements.forEach((element) => {
         const pin = element.textContent;
@@ -626,9 +632,7 @@
       journalLinkToggle.style.marginRight = "10px";
       journalLinkToggle.addEventListener("click", () => {
         fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-          headers: {
-            "accept": "application/json"
-          }
+          headers: { accept: "application/json" }
         }).then((r) => r.json()).then((data) => {
           tableRows.forEach((row) => {
             let subject = row.querySelector("td:nth-child(1)").textContent.trim().toLowerCase();
@@ -654,15 +658,20 @@
     async function studentProfileModuleAndJournalLinks(studentId) {
       const curriculumVersionId = currentStudent?.curriculumVersion?.id;
       const groupCode = currentStudent?.curriculumVersion?.code;
-      const modulesDom = document.querySelectorAll(".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span");
+      const modulesDom = document.querySelectorAll(
+        ".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span"
+      );
       const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
-      let moduleProtocolsResponse = await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`, {
-        headers: { "accept": "application/json" }
-      });
+      let moduleProtocolsResponse = await fetch(
+        `https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
+        { headers: { accept: "application/json" } }
+      );
       let moduleProtocols = await moduleProtocolsResponse.json();
       modulesDom.forEach((moduleDom) => {
         let moduleName = moduleDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
-        moduleProtocols.content.filter((mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName).forEach((mp) => {
+        moduleProtocols.content.filter(
+          (mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName
+        ).forEach((mp) => {
           let moduleLink = document.createElement("a");
           moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
           moduleLink.target = "_blank";
@@ -681,16 +690,15 @@
             newModuleLink.style.color = "gray";
             newModuleLink.textContent = "Laeb...";
             let studyYearResponse = await fetch("https://tahvel.edu.ee/hois_back/school/studyYear/current-or-next-dto", {
-              "credentials": "include",
-              "headers": { "Accept": "application/json, text/plain, */*" },
-              "method": "GET"
+              credentials: "include",
+              headers: { Accept: "application/json, text/plain, */*" },
+              method: "GET"
             });
             let studyYear = await studyYearResponse.json();
-            let studentsResponse = await await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`, {
-              "credentials": "include",
-              "headers": { "Accept": "application/json, text/plain, */*" },
-              "method": "GET"
-            });
+            let studentsResponse = await await fetch(
+              `https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
+              { credentials: "include", headers: { Accept: "application/json, text/plain, */*" }, method: "GET" }
+            );
             let students = await studentsResponse.json();
             let moduleName2 = moduleData.curriculumModule.nameEt;
             if (!(currentStudent.curriculumVersion.id && studyYear.id && students.teacher.id, moduleData.id)) {
@@ -707,27 +715,27 @@
             let confirmText = `Oled loomas uut protokolli moodulile ${moduleName2}. Moodulile m\xE4\xE4ratakse \xF5ppeaasta ${studyYear.nameEt}, \xF5petajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} \xF5pilast.`;
             if (confirm(confirmText)) {
               let newModuleResponse = await fetch("https://tahvel.edu.ee/hois_back/moduleProtocols", {
-                "credentials": "include",
-                "headers": {
+                credentials: "include",
+                headers: {
                   "Accept": "application/json, text/plain, */*",
                   "Content-Type": "application/json;charset=utf-8",
                   "X-XSRF-TOKEN": getCsrfToken()
                 },
-                "body": JSON.stringify({
-                  "protocolVdata": {
-                    "curriculumVersionOccupationModule": moduleData.id,
-                    "curriculumVersion": currentStudent.curriculumVersion.id,
-                    "studyYear": studyYear.id,
-                    "teacher": students.teacher.id
+                body: JSON.stringify({
+                  protocolVdata: {
+                    curriculumVersionOccupationModule: moduleData.id,
+                    curriculumVersion: currentStudent.curriculumVersion.id,
+                    studyYear: studyYear.id,
+                    teacher: students.teacher.id
                   },
-                  "protocolStudents": students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
-                  "type": "module",
-                  "isBasic": false,
-                  "isSecondary": false,
-                  "isHigher": false,
-                  "isVocational": true
+                  protocolStudents: students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
+                  type: "module",
+                  isBasic: false,
+                  isSecondary: false,
+                  isHigher: false,
+                  isVocational: true
                 }),
-                "method": "POST"
+                method: "POST"
               });
               let newModule = await newModuleResponse.json();
               window.open(`#/moduleProtocols/module/${newModule.id}/edit`, "_blank");
@@ -747,7 +755,7 @@
         }
       });
       let journalsResponse = await fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-        headers: { "accept": "application/json" }
+        headers: { accept: "application/json" }
       });
       let vocationalConnectedEntities = await journalsResponse.json();
       journalsDom.forEach((journal) => {
@@ -764,8 +772,7 @@
     }
     function updateRJAParameters(event) {
       let group = event;
-      if (typeof group === "object" && group.nameEt)
-        group = group.nameEt;
+      if (typeof group === "object" && group.nameEt) group = group.nameEt;
       let year = parseInt(group.match(/\d+/)[0]) + 2e3;
       let date = new Date(year, 7, 1);
       let previousPeriodYear = (/* @__PURE__ */ new Date()).getFullYear() - 1;
@@ -777,8 +784,7 @@
       for (let i = 0; i < 4; i++) {
         document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
           let inputState = input.getAttribute("aria-checked") === "true" ? 1 : 0;
-          if (inputState ^ rjaEntryTypes[index])
-            input.click();
+          if (inputState ^ rjaEntryTypes[index]) input.click();
         });
       }
       let dateInput = document.querySelector(`[ng-model="criteria.from"] input`);
@@ -906,11 +912,10 @@
       let diff = today.getDate() - day + (day == 0 ? -6 : 1);
       let monday = new Date(today.setDate(diff)).toISOString().split("T")[0] + "T00:00:00Z";
       let sunday = new Date(today.setDate(diff + 6)).toISOString().split("T")[0] + "T00:00:00Z";
-      fetch(`https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`, {
-        headers: {
-          "accept": "application/json"
-        }
-      }).then((r) => r.json()).then((timetable) => {
+      fetch(
+        `https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
+        { headers: { accept: "application/json" } }
+      ).then((r) => r.json()).then((timetable) => {
         let alreadyAdded = [];
         let todaysEvents = timetable.timetableEvents.filter((te) => te.journalId && te.date.startsWith(todayStr));
         todaysEvents.forEach((te) => {
@@ -965,56 +970,68 @@
       });
       return originalSend.apply(this, arguments);
     };
-    addXHRInterceptor((url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"), (data) => {
-      console.log("currentTeacherId:", data.teacher);
-      if (data?.teacher) {
-        localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
-      }
-      if (data?.school?.id) {
-        localStorage.setItem("schoolId", JSON.stringify(data.school.id));
-      }
-      if (data?.name || data?.fullname) {
-        let lastUsage = localStorage.getItem("lastUsage");
-        if (!lastUsage || Date.now() - lastUsage > 36e5) {
-          localStorage.setItem("lastUsage", Date.now());
+    addXHRInterceptor(
+      (url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"),
+      (data) => {
+        console.log("currentTeacherId:", data.teacher);
+        if (data?.teacher) {
+          localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
+        }
+        if (data?.school?.id) {
+          localStorage.setItem("schoolId", JSON.stringify(data.school.id));
+        }
+        if (data?.name || data?.fullname) {
+          let lastUsage = localStorage.getItem("lastUsage");
+          if (!lastUsage || Date.now() - lastUsage > 36e5) {
+            localStorage.setItem("lastUsage", Date.now());
+          }
         }
       }
-    });
-    addXHRInterceptor((url) => url.includes("hois_back/reports/studentgroupteacher"), (data) => {
-      if (oppetoetus) {
-        let a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-        let fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]').value ?? "class-teacher-report";
-        a.download = `${fileName}.json`;
-        a.click();
+    );
+    addXHRInterceptor(
+      (url) => url.includes("hois_back/reports/studentgroupteacher"),
+      (data) => {
+        if (oppetoetus) {
+          let a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+          let fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]').value ?? "class-teacher-report";
+          a.download = `${fileName}.json`;
+          a.click();
+        }
+        currentClassTeacherReport = data;
       }
-      currentClassTeacherReport = data;
-    });
-    addXHRInterceptor((url) => url.match(/hois_back\/students\/\d+$/) !== null, (data) => {
-      currentStudent = data;
-    });
-    addXHRInterceptor((url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/), (data) => {
-      currentStudentModules = data;
-    });
+    );
+    addXHRInterceptor(
+      (url) => url.match(/hois_back\/students\/\d+$/) !== null,
+      (data) => {
+        currentStudent = data;
+      }
+    );
+    addXHRInterceptor(
+      (url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/),
+      (data) => {
+        currentStudentModules = data;
+      }
+    );
   })();
   function simulateTyping(inputElement, text, latency, interResponseTime) {
     inputElement.value = text;
     inputElement.dispatchEvent(new Event("input", { bubbles: true }));
   }
   var SissekandedEnum = {
-    "SISSEKANNE_EX": "Eksam",
-    "SISSEKANNE_E": "E-\xF5pe",
-    "SISSEKANNE_H": "Hindamine",
-    "SISSEKANNE_HO": "Hoolsus",
-    "SISSEKANNE_I": "Iseseisev t\xF6\xF6",
-    "SISSEKANNE_C": "Kontrollt\xF6\xF6",
-    "SISSEKANNE_KU": "Kursuse hinne",
-    "SISSEKANNE_K": "K\xE4itumine",
-    "SISSEKANNE_L": "L\xF5pptulemus",
-    "SISSEKANNE_R": "Perioodi hinne",
-    "SISSEKANNE_P": "Praktiline t\xF6\xF6",
-    "SISSEKANNE_T": "Tund",
-    "SISSEKANNE_O": "\xD5piv\xE4ljund"
+    SISSEKANNE_EX: "Eksam",
+    SISSEKANNE_E: "E-\xF5pe",
+    SISSEKANNE_H: "Hindamine",
+    SISSEKANNE_HO: "Hoolsus",
+    SISSEKANNE_I: "Iseseisev t\xF6\xF6",
+    SISSEKANNE_C: "Kontrollt\xF6\xF6",
+    SISSEKANNE_KU: "Kursuse hinne",
+    SISSEKANNE_K: "K\xE4itumine",
+    SISSEKANNE_L: "L\xF5pptulemus",
+    SISSEKANNE_R: "Perioodi hinne",
+    SISSEKANNE_P: "Praktiline t\xF6\xF6",
+    SISSEKANNE_T: "Tund",
+    SISSEKANNE_O: "\xD5piv\xE4ljund"
   };
   function getCsrfToken() {
     const match = document.cookie.match(new RegExp("(^| )XSRF-TOKEN=([^;]+)"));
@@ -1150,13 +1167,7 @@
         greatGrades: [],
         gradeTotal: []
       },
-      absences: {
-        dates: [],
-        noReason: [],
-        withReason: [],
-        absencesTotal: [],
-        lessons: []
-      }
+      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [] }
     };
     data.grades.forEach((e) => {
       processedData.grades.dates.push(e.date);
@@ -1178,26 +1189,69 @@
   }
   function graphData(data, graphType2) {
     let datasetSimple = [
-      { label: "negatiivseid hindeid", data: data.grades.negativeGrades, borderWidth: 2, borderColor: "#eb3b5a", backgroundColor: "#fc5c65", fill: true, stack: "grades" },
-      { label: "positiivseid hindeid", data: data.grades.positiveGrades, borderWidth: 2, borderColor: "#20bf6b", backgroundColor: "#26de81", fill: true, stack: "grades" }
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "positiivseid hindeid",
+        data: data.grades.positiveGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
     ];
     let datasetAdvanced = [
-      { label: "negatiivseid hindeid", data: data.grades.negativeGrades, borderWidth: 2, borderColor: "#eb3b5a", backgroundColor: "#fc5c65", fill: true, stack: "grades" },
-      { label: "rahuldavaid hindeid", data: data.grades.fineGrades, borderWidth: 2, borderColor: "#fa8231", backgroundColor: "#fd9644", fill: true, stack: "grades" },
-      { label: "h\xE4id hindeid", data: data.grades.goodGrades, borderWidth: 2, borderColor: "#f7b731", backgroundColor: "#fed330", fill: true, stack: "grades" },
-      { label: "suurep\xE4raseid hindeid", data: data.grades.greatGrades, borderWidth: 2, borderColor: "#20bf6b", backgroundColor: "#26de81", fill: true, stack: "grades" }
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "rahuldavaid hindeid",
+        data: data.grades.fineGrades,
+        borderWidth: 2,
+        borderColor: "#fa8231",
+        backgroundColor: "#fd9644",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "h\xE4id hindeid",
+        data: data.grades.goodGrades,
+        borderWidth: 2,
+        borderColor: "#f7b731",
+        backgroundColor: "#fed330",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "suurep\xE4raseid hindeid",
+        data: data.grades.greatGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
     ];
     if (graphType2 == "grades") {
       return {
         labels: data.grades.dates,
         datasets: [
           ...simpleMode ? datasetSimple : datasetAdvanced,
-          {
-            label: "hindeid kokku",
-            data: data.grades.gradeTotal,
-            borderColor: "#4b6584",
-            backgroundColor: "#778ca3"
-          }
+          { label: "hindeid kokku", data: data.grades.gradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
         ]
       };
     } else if (graphType2 == "absences") {
@@ -1276,12 +1330,12 @@
       graphType = graphType === "grades" ? "absences" : "grades";
       graphDataBtn.text = graphDataBtn.text === "Hinnete vaade" ? "Puudumiste vaade" : "Hinnete vaade";
       document.querySelector("#graphModeBtn").style.display = graphDataBtn.text === "Hinnete vaade" ? "inline-block" : "none";
-      createGraph();
+      createGradeHistory();
     });
     graphModeBtn.addEventListener("click", () => {
       simpleMode = !simpleMode;
       graphModeBtn.text = graphModeBtn.text === "Lihtne vaade" ? "T\xE4iustatud vaade" : "Lihtne vaade";
-      createGraph();
+      createGradeHistory();
     });
     graphControlls.appendChild(graphDataBtn);
     graphControlls.appendChild(graphModeBtn);
@@ -1307,21 +1361,12 @@
         data: graphData(processedData, graphType),
         options: {
           plugins: {
-            tooltip: {
-              mode: "index",
-              intersect: false
-            },
+            tooltip: { mode: "index", intersect: false },
             legend: {
-              labels: {
-                filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku"
-              }
+              labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" }
             }
           },
-          scales: {
-            y: {
-              stacked: true
-            }
-          }
+          scales: { y: { stacked: true } }
         }
       });
       return;
