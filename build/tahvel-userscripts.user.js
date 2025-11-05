@@ -1041,6 +1041,44 @@
     return null;
   }
 
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
+  // src/features/msal.js
+  var msalInstance;
+  var msalReady = new Promise((resolve) => {
+    let gradeHistoryScript = document.getElementById("msal-script");
+    function onMsalReady() {
+      resolve(initMsal());
+    }
+    if (!gradeHistoryScript) {
+      gradeHistoryScript = document.createElement("script");
+      gradeHistoryScript.id = "msal-script";
+      gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
+      gradeHistoryScript.type = "text/javascript";
+      gradeHistoryScript.onload = onMsalReady;
+      document.body.appendChild(gradeHistoryScript);
+    } else if (window.msal && window.PublicClientApplication) {
+      resolve(initMsal());
+    } else {
+      gradeHistoryScript.onload = onMsalReady;
+    }
+  });
+  function initMsal() {
+    const msalConfig = {
+      auth: {
+        clientId: MSAL_CLIENT_ID,
+        authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+        redirectUri: "https://tahvel.edu.ee/"
+      },
+      cache: { cacheLocation: "localStorage" }
+    };
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    return msalInstance;
+  }
+
   // src/features/gradeHistory.js
   var exampleData = {
     grades: [
@@ -1149,12 +1187,27 @@
     hash = window.location.hash;
     createGradeHistory();
   });
+  var request = { scopes: ["openid", "profile"] };
   function manageLogin(elements) {
-    let isLoggedin = false;
-    if (!isLoggedin) {
+    console.log("Managing login state...");
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length === 0) {
+      console.log("No accounts found, showing login overlay.");
       elements.loginOverlay.style.display = "flex";
       return;
     }
+    msalInstance.setActiveAccount(accounts[0]);
+    const silentRequest = { ...request, account: accounts[0] };
+    msalInstance.acquireTokenSilent(silentRequest).then((response) => {
+      console.log("Token acquired silently.");
+      console.log(response);
+      elements.loginOverlay.style.display = "none";
+    }).catch((error) => {
+      console.log("Silent token acquisition failed, showing login overlay.");
+      console.error(error);
+      elements.loginOverlay.style.display = "flex";
+    });
+    console.log(fetchGradeHistory());
   }
   function processData(data) {
     let processedData = {
@@ -1315,6 +1368,13 @@
     loginBtn.id = "loginBtn";
     loginBtn.className = "md-raised md-primary md-button md-ink-ripple";
     loginBtn.text = "Logi sisse";
+    loginBtn.addEventListener("click", () => {
+      msalInstance.loginPopup({ scopes: ["user.read"] }).then((response) => {
+        manageLogin({ loginOverlay });
+      }).catch((error) => {
+        alert("Login failed: " + error);
+      });
+    });
     loginContent.appendChild(loginText);
     loginContent.appendChild(loginBtn);
     const graphControlls = document.createElement("div");
@@ -1373,5 +1433,29 @@
     }
     myChart.data = graphData(processedData, graphType);
     myChart.update();
+  }
+  async function fetchGradeHistory() {
+    try {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) {
+        throw new Error("No authenticated user found");
+      }
+      const tokenRequest = {
+        scopes: [MSAL_CLIENT_ID + "/.default"],
+        // Your API scopes here
+        account: accounts[0]
+        // Use the active or desired account
+      };
+      const response = await msalInstance.acquireTokenSilent(tokenRequest);
+      const accessToken = response.accessToken;
+      const apiResponse = await fetch(SERVER_URL + "/api/StudentRecord/Student/86673", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+      }).then((res) => res.json());
+      return apiResponse;
+    } catch (error) {
+      console.error("Error during fetchWithToken:", error);
+      throw error;
+    }
   }
 })();

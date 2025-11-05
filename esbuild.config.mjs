@@ -1,5 +1,6 @@
-import * as esbuild from 'esbuild';
 import fs from 'fs';
+import * as esbuild from 'esbuild';
+import envFilePlugin from 'esbuild-envfile-plugin';
 import { version, dataCollectorVersion } from './src/version.js';
 
 const header1 = fs.readFileSync('./header1.js', 'utf8').replace('${version}', version);
@@ -7,6 +8,7 @@ const header2 = fs.readFileSync('./header2.js', 'utf8').replace('${version}', da
 
 await esbuild.build({
   entryPoints: ['src/tahvel-userscripts.user.js'],
+  plugins: [envFilePlugin],
   bundle: true,
   outfile: 'build/tahvel-userscripts.user.js',
   format: 'iife',
@@ -17,6 +19,7 @@ await esbuild.build({
 
 await esbuild.build({
   entryPoints: ['src/data-collector.js'],
+  plugins: [envFilePlugin],
   bundle: true,
   outfile: 'build/data-collector.user.js',
   format: 'iife',

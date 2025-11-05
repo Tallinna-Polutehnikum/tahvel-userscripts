@@ -1,6 +1,36 @@
+import { msalInstance, msalReady } from './msal.js';
+import * as env from 'env';
+
 calculateStudentData();
 
+async function getAccessToken() {
+  let accessToken;
+
+  await msalReady;
+
+  // Prepare token request - adjust scopes and account as needed
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length === 0) {
+    throw new Error('No authenticated user found');
+  }
+
+  // Include the active account in the request to acquireTokenSilent
+  const silentRequest = { scopes: [env.MSAL_CLIENT_ID + '/.default'], account: accounts[0] };
+
+  try {
+    const tokenResponse = await msalInstance.acquireTokenSilent(silentRequest);
+    accessToken = tokenResponse.accessToken;
+  } catch (error) {
+    console.error('Could not acquire token silently', error);
+    throw error;
+  }
+
+  return accessToken;
+}
+
 async function calculateStudentData() {
+  const requestId = Math.floor(Math.random() * 1000000);
+
   // Fetch one group
   let groupData = await fetch('https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE');
   groupData = await groupData.json();
@@ -11,9 +41,23 @@ async function calculateStudentData() {
   );
   groupData = await groupData.json();
 
+  // Server switch on
+  try {
+    await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: true });
+    console.log('Finished successfully');
+  } catch (err) {
+    if (err.message.includes('Unauthorized')) {
+      console.error('Stopping due to 401 Unauthorized response.');
+      return;
+    } else {
+      console.error(err);
+      return;
+    }
+  }
+
   // Get group data for each group
   // Use for loop instead of forEach to handle async/await properly
-  for (const groupEntry of groupData.content) {
+  mainLoop: for (const groupEntry of groupData.content) {
     let group = await fetch(
       `https://tahvel.edu.ee/hois_back/reports/studentgroupteacher?canceledStudents=false&curriculumVersion=6478&entryType=%7B%22SISSEKANNE_H%22:true,%22SISSEKANNE_R%22:true,%22SISSEKANNE_O%22:false,%22SISSEKANNE_L%22:true,%22SISSEKANNE_P%22:true,%22SISSEKANNE_T%22:true,%22SISSEKANNE_E%22:true,%22SISSEKANNE_I%22:true%7D&entryTypes=SISSEKANNE_H&entryTypes=SISSEKANNE_R&entryTypes=SISSEKANNE_L&entryTypes=SISSEKANNE_P&entryTypes=SISSEKANNE_T&entryTypes=SISSEKANNE_E&entryTypes=SISSEKANNE_I&from=2022-08-01T00:00:00.000Z&graduatedStudents=false&lang=ET&studentGroup=${groupEntry.id}&studyYear=`
     );
@@ -82,15 +126,15 @@ async function calculateStudentData() {
       // Count and filter student grades
       student.resultColumns.forEach(entry => {
         try {
-        if (entry.journalResult.existsInJournal) {
-          entry.journalResult.results.forEach(result => {
-            if (result.entryType === 'SISSEKANNE_L') {
-              getGrade(result.grade.code, true);
-            } else if (['SISSEKANNE_H', 'SISSEKANNE_I', 'SISSEKANNE_C', 'SISSEKANNE_T'].includes(result.entryType)) {
-              getGrade(result.grade.code, false);
-            }
-          });
-        }
+          if (entry.journalResult.existsInJournal) {
+            entry.journalResult.results.forEach(result => {
+              if (result.entryType === 'SISSEKANNE_L') {
+                getGrade(result.grade.code, true);
+              } else if (['SISSEKANNE_H', 'SISSEKANNE_I', 'SISSEKANNE_C', 'SISSEKANNE_T'].includes(result.entryType)) {
+                getGrade(result.grade.code, false);
+              }
+            });
+          }
         } catch (e) {
           console.error(`Error processing grades for student ${student.id} in class ${groupEntry.id}: `, e);
         }
@@ -122,9 +166,32 @@ async function calculateStudentData() {
         absences: { absenceWithReason, absenceNoReason, calculatedMetric: student.lessonAbsencePercentage ?? 0 },
       };
 
-      await postUntilSuccess('http://localhost:8080/api/StudentRecord', studentData)
-        .then(() => console.log('Finished successfully'))
-        .catch(err => console.error(err));
+      try {
+        await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord', studentData);
+        console.log('Finished successfully');
+      } catch (err) {
+        if (err.message.includes('Unauthorized')) {
+          console.error('Stopping due to 401 Unauthorized response.');
+          break mainLoop; // Break the outer loop
+        } else {
+          console.error(err);
+          break mainLoop; // Break the outer loop
+        }
+      }
+    }
+  }
+
+  // Server switch off
+  try {
+    await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: false });
+    console.log('Finished successfully');
+  } catch (err) {
+    if (err.message.includes('Unauthorized')) {
+      console.error('Stopping due to 401 Unauthorized response.');
+      return;
+    } else {
+      console.error(err);
+      return;
     }
   }
 
@@ -133,11 +200,15 @@ async function calculateStudentData() {
 
 async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
   let retries = 0;
+  const token = await getAccessToken(); // Acquire access token once before retry loop
 
   while (retries < maxRetries) {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`, // Add the token here
+      },
       credentials: 'include',
       body: JSON.stringify(data),
     });
@@ -145,6 +216,8 @@ async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
     if (response.status === 200) {
       console.log('Success');
       return;
+    } else if (response.status === 401) {
+      throw new Error(`Unauthorized: Access token may be invalid or expired.`);
     } else {
       retries++;
       console.log(`Attempt ${retries} failed with status ${response.status}. Retrying in ${delayMs}ms...`);

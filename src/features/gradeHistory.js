@@ -1,5 +1,7 @@
 // https://tahvel.edu.ee/#/students/141230/results?_noback
 // https://tahvel.edu.ee/#/students/myResults
+import { msalInstance, msalReady } from './msal.js';
+import * as env from 'env';
 
 let exampleData = {
   grades: [
@@ -120,13 +122,40 @@ window.addEventListener('hashchange', () => {
   createGradeHistory();
 });
 
-function manageLogin(elements) {
-  let isLoggedin = false; // TODO: add login check by createing a api endpoint to check it
+const request = { scopes: ['openid', 'profile'] };
 
-  if (!isLoggedin) {
+function manageLogin(elements) {
+  console.log('Managing login state...');
+
+  const accounts = msalInstance.getAllAccounts();
+
+  if (accounts.length === 0) {
+    // No accounts found, show login overlay
+    console.log('No accounts found, showing login overlay.');
     elements.loginOverlay.style.display = 'flex';
     return;
   }
+
+  // Set the first account as active (you can customize which to use)
+  msalInstance.setActiveAccount(accounts[0]);
+
+  // Include the active account in the request to acquireTokenSilent
+  const silentRequest = { ...request, account: accounts[0] };
+
+  msalInstance
+    .acquireTokenSilent(silentRequest)
+    .then(response => {
+      console.log('Token acquired silently.');
+      console.log(response);
+      elements.loginOverlay.style.display = 'none';
+    })
+    .catch(error => {
+      console.log('Silent token acquisition failed, showing login overlay.');
+      console.error(error);
+      elements.loginOverlay.style.display = 'flex';
+    });
+
+  console.log(fetchGradeHistory());
 }
 
 function processData(data) {
@@ -305,6 +334,17 @@ function createGraphElements(previousElement) {
   loginBtn.className = 'md-raised md-primary md-button md-ink-ripple';
   loginBtn.text = 'Logi sisse';
 
+  loginBtn.addEventListener('click', () => {
+    msalInstance
+      .loginPopup({ scopes: ['user.read'] })
+      .then(response => {
+        manageLogin({ loginOverlay });
+      })
+      .catch(error => {
+        alert('Login failed: ' + error);
+      });
+  });
+
   loginContent.appendChild(loginText);
   loginContent.appendChild(loginBtn);
 
@@ -382,4 +422,34 @@ function initChart(graph) {
   myChart.data = graphData(processedData, graphType);
 
   myChart.update();
+}
+
+async function fetchGradeHistory() {
+  try {
+    // Prepare token request - adjust scopes and account as needed
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length === 0) {
+      throw new Error('No authenticated user found');
+    }
+
+    const tokenRequest = {
+      scopes: [env.MSAL_CLIENT_ID + '/.default'], // Your API scopes here
+      account: accounts[0], // Use the active or desired account
+    };
+
+    // Acquire token silently (handles caching and renewal)
+    const response = await msalInstance.acquireTokenSilent(tokenRequest);
+    const accessToken = response.accessToken;
+
+    // Make the fetch request with the token
+    const apiResponse = await fetch(env.SERVER_URL + '/api/StudentRecord/Student/86673', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    }).then(res => res.json());
+
+    return apiResponse;
+  } catch (error) {
+    console.error('Error during fetchWithToken:', error);
+    throw error;
+  }
 }

@@ -21,16 +21,84 @@
     console.log("session extended at: " + /* @__PURE__ */ new Date());
   }, 12e4);
 
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
+  // src/features/msal.js
+  var msalInstance;
+  var msalReady = new Promise((resolve) => {
+    let gradeHistoryScript = document.getElementById("msal-script");
+    function onMsalReady() {
+      resolve(initMsal());
+    }
+    if (!gradeHistoryScript) {
+      gradeHistoryScript = document.createElement("script");
+      gradeHistoryScript.id = "msal-script";
+      gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
+      gradeHistoryScript.type = "text/javascript";
+      gradeHistoryScript.onload = onMsalReady;
+      document.body.appendChild(gradeHistoryScript);
+    } else if (window.msal && window.PublicClientApplication) {
+      resolve(initMsal());
+    } else {
+      gradeHistoryScript.onload = onMsalReady;
+    }
+  });
+  function initMsal() {
+    const msalConfig = {
+      auth: {
+        clientId: MSAL_CLIENT_ID,
+        authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+        redirectUri: "https://tahvel.edu.ee/"
+      },
+      cache: { cacheLocation: "localStorage" }
+    };
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    return msalInstance;
+  }
+
   // src/features/studentData.js
   calculateStudentData();
+  async function getAccessToken() {
+    let accessToken;
+    await msalReady;
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length === 0) {
+      throw new Error("No authenticated user found");
+    }
+    const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: accounts[0] };
+    try {
+      const tokenResponse = await msalInstance.acquireTokenSilent(silentRequest);
+      accessToken = tokenResponse.accessToken;
+    } catch (error) {
+      console.error("Could not acquire token silently", error);
+      throw error;
+    }
+    return accessToken;
+  }
   async function calculateStudentData() {
+    const requestId = Math.floor(Math.random() * 1e6);
     let groupData = await fetch("https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE");
     groupData = await groupData.json();
     groupData = await fetch(
       `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
     );
     groupData = await groupData.json();
-    for (const groupEntry of groupData.content) {
+    try {
+      await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: true });
+      console.log("Finished successfully");
+    } catch (err) {
+      if (err.message.includes("Unauthorized")) {
+        console.error("Stopping due to 401 Unauthorized response.");
+        return;
+      } else {
+        console.error(err);
+        return;
+      }
+    }
+    mainLoop: for (const groupEntry of groupData.content) {
       let group = await fetch(
         `https://tahvel.edu.ee/hois_back/reports/studentgroupteacher?canceledStudents=false&curriculumVersion=6478&entryType=%7B%22SISSEKANNE_H%22:true,%22SISSEKANNE_R%22:true,%22SISSEKANNE_O%22:false,%22SISSEKANNE_L%22:true,%22SISSEKANNE_P%22:true,%22SISSEKANNE_T%22:true,%22SISSEKANNE_E%22:true,%22SISSEKANNE_I%22:true%7D&entryTypes=SISSEKANNE_H&entryTypes=SISSEKANNE_R&entryTypes=SISSEKANNE_L&entryTypes=SISSEKANNE_P&entryTypes=SISSEKANNE_T&entryTypes=SISSEKANNE_E&entryTypes=SISSEKANNE_I&from=2022-08-01T00:00:00.000Z&graduatedStudents=false&lang=ET&studentGroup=${groupEntry.id}&studyYear=`
       );
@@ -114,23 +182,53 @@
           },
           absences: { absenceWithReason, absenceNoReason, calculatedMetric: student.lessonAbsencePercentage ?? 0 }
         };
-        await postUntilSuccess("http://localhost:8080/api/StudentRecord", studentData).then(() => console.log("Finished successfully")).catch((err) => console.error(err));
+        try {
+          await postUntilSuccess(SERVER_URL + "/api/StudentRecord", studentData);
+          console.log("Finished successfully");
+        } catch (err) {
+          if (err.message.includes("Unauthorized")) {
+            console.error("Stopping due to 401 Unauthorized response.");
+            break mainLoop;
+          } else {
+            console.error(err);
+            break mainLoop;
+          }
+        }
+      }
+    }
+    try {
+      await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: false });
+      console.log("Finished successfully");
+    } catch (err) {
+      if (err.message.includes("Unauthorized")) {
+        console.error("Stopping due to 401 Unauthorized response.");
+        return;
+      } else {
+        console.error(err);
+        return;
       }
     }
     console.log("Student data collection complete.");
   }
   async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
     let retries = 0;
+    const token = await getAccessToken();
     while (retries < maxRetries) {
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+          // Add the token here
+        },
         credentials: "include",
         body: JSON.stringify(data)
       });
       if (response.status === 200) {
         console.log("Success");
         return;
+      } else if (response.status === 401) {
+        throw new Error(`Unauthorized: Access token may be invalid or expired.`);
       } else {
         retries++;
         console.log(`Attempt ${retries} failed with status ${response.status}. Retrying in ${delayMs}ms...`);
