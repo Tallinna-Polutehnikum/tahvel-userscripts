@@ -3,6 +3,11 @@
 import { msalInstance, msalReady } from './msal.js';
 import * as env from 'env';
 
+window.addEventListener('hashchange', () => {
+  hash = window.location.hash;
+  gradeHistoryMain();
+});
+
 let exampleData = {
   grades: [
     { date: '29.09', negativeGrades: '1', fineGrades: '3', goodGrades: '5', greatGrades: '5' },
@@ -38,6 +43,8 @@ let exampleData = {
     { date: '29.09', withReason: '5', noReason: '4', metric: '60' },
   ],
 };
+
+let studentData = {};
 
 // Inject CSS
 const gradeHistoryStyle = document.createElement('style');
@@ -82,7 +89,7 @@ let hash = window.location.hash;
 let simpleMode = true;
 let graphType = 'grades';
 
-function createGradeHistory() {
+async function createGradeHistory() {
   if (hash.includes('/results') || hash.includes('/myResults')) {
     const init = () => {
       const mainContent = document.querySelector('#main-content');
@@ -91,14 +98,18 @@ function createGradeHistory() {
       if (mainContent && fieldSet) {
         let elements;
         let graph = mainContent.querySelector('#gradeHistoryGraph');
+        let loginOverlay = mainContent.querySelector('#loginOverlay');
 
-        if (!graph) {
+        if (!graph || !loginOverlay) {
           elements = createGraphElements(fieldSet);
           graph = elements.graph;
+          loginOverlay = elements.loginOverlay;
         }
 
-        initChart(graph);
-        manageLogin(elements);
+        if (!manageLogin(graph, loginOverlay)) {
+          initChart(graph, exampleData);
+        }
+
         return true;
       }
       return false;
@@ -115,16 +126,18 @@ function createGradeHistory() {
   }
 }
 
-createGradeHistory();
-
-window.addEventListener('hashchange', () => {
-  hash = window.location.hash;
-  createGradeHistory();
-});
+async function gradeHistoryMain() {
+  console.log('Initializing grade history feature...');
+  await createGradeHistory();
+  if ((hash.includes('/results') || hash.includes('/myResults')) && document.querySelector('#gradeHistoryContainer')) {
+    window.location.reload();
+  }
+}
+gradeHistoryMain();
 
 const request = { scopes: ['openid', 'profile'] };
 
-function manageLogin(elements) {
+function manageLogin(graph, loginOverlay) {
   console.log('Managing login state...');
 
   const accounts = msalInstance.getAllAccounts();
@@ -132,8 +145,8 @@ function manageLogin(elements) {
   if (accounts.length === 0) {
     // No accounts found, show login overlay
     console.log('No accounts found, showing login overlay.');
-    elements.loginOverlay.style.display = 'flex';
-    return;
+    loginOverlay.style.display = 'flex';
+    return false;
   }
 
   // Set the first account as active (you can customize which to use)
@@ -144,18 +157,17 @@ function manageLogin(elements) {
 
   msalInstance
     .acquireTokenSilent(silentRequest)
-    .then(response => {
-      console.log('Token acquired silently.');
-      console.log(response);
-      elements.loginOverlay.style.display = 'none';
+    .then(async response => {
+      loginOverlay.style.display = 'none';
+      initChart(graph, await fetchGradeHistory());
     })
     .catch(error => {
       console.log('Silent token acquisition failed, showing login overlay.');
       console.error(error);
-      elements.loginOverlay.style.display = 'flex';
+      loginOverlay.style.display = 'flex';
     });
 
-  console.log(fetchGradeHistory());
+  return true;
 }
 
 function processData(data) {
@@ -323,31 +335,6 @@ function createGraphElements(previousElement) {
   graphContainer.id = 'graphContainer';
   graphContainer.className = 'graph-container';
 
-  // Create login content
-  const loginContent = document.createElement('div');
-  loginContent.id = 'loginContent';
-  loginContent.className = 'login-box';
-  const loginText = document.createElement('h1');
-  loginText.textContent = 'Logi sisse hinnete ajaloo nägemiseks';
-  const loginBtn = document.createElement('a');
-  loginBtn.id = 'loginBtn';
-  loginBtn.className = 'md-raised md-primary md-button md-ink-ripple';
-  loginBtn.text = 'Logi sisse';
-
-  loginBtn.addEventListener('click', () => {
-    msalInstance
-      .loginPopup({ scopes: ['user.read'] })
-      .then(response => {
-        manageLogin({ loginOverlay });
-      })
-      .catch(error => {
-        alert('Login failed: ' + error);
-      });
-  });
-
-  loginContent.appendChild(loginText);
-  loginContent.appendChild(loginBtn);
-
   // Create graph controlls
   const graphControlls = document.createElement('div');
   const graphDataBtn = document.createElement('a');
@@ -382,6 +369,31 @@ function createGraphElements(previousElement) {
   graph.width = '100%';
   graph.style.margin = '2px';
 
+  // Create login content
+  const loginContent = document.createElement('div');
+  loginContent.id = 'loginContent';
+  loginContent.className = 'login-box';
+  const loginText = document.createElement('h1');
+  loginText.textContent = 'Logi sisse hinnete ajaloo nägemiseks';
+  const loginBtn = document.createElement('a');
+  loginBtn.id = 'loginBtn';
+  loginBtn.className = 'md-raised md-primary md-button md-ink-ripple';
+  loginBtn.text = 'Logi sisse';
+
+  loginBtn.addEventListener('click', () => {
+    msalInstance
+      .loginPopup({ scopes: ['user.read'] })
+      .then(response => {
+        manageLogin(graph, loginOverlay);
+      })
+      .catch(error => {
+        alert('Login failed: ' + error);
+      });
+  });
+
+  loginContent.appendChild(loginText);
+  loginContent.appendChild(loginBtn);
+
   // Create login form
   graphContainer.appendChild(graphControlls);
   graphContainer.appendChild(graph);
@@ -396,8 +408,8 @@ function createGraphElements(previousElement) {
   return { graph, loginOverlay, graphContainer };
 }
 
-function initChart(graph) {
-  let processedData = processData(exampleData, simpleMode);
+function initChart(graph, data) {
+  let processedData = processData(data, simpleMode);
 
   let myChart = Chart.getChart(graph);
 
@@ -426,6 +438,14 @@ function initChart(graph) {
 
 async function fetchGradeHistory() {
   try {
+    const studentId = await getStudentId();
+
+    console.log(studentData);
+    // Check if we already have student data cached
+    if (studentData && studentData[studentId]) {
+      return studentData[studentId];
+    }
+
     // Prepare token request - adjust scopes and account as needed
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length === 0) {
@@ -442,14 +462,36 @@ async function fetchGradeHistory() {
     const accessToken = response.accessToken;
 
     // Make the fetch request with the token
-    const apiResponse = await fetch(env.SERVER_URL + '/api/StudentRecord/Student/86673', {
+    const apiResponse = await fetch(env.SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     }).then(res => res.json());
+
+    studentData[studentId] = apiResponse;
 
     return apiResponse;
   } catch (error) {
     console.error('Error during fetchWithToken:', error);
     throw error;
   }
+}
+
+function getStudentId() {
+  let id = null;
+
+  const url = window.location.href;
+  const match = url.match(/\/students\/(\d+)/);
+  id = match ? match[1] : null;
+
+  if (!id) {
+    id = fetch('https://tahvel.edu.ee/hois_back/user', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { accept: 'application/json, text/plain, */*' },
+    })
+      .then(res => res.json())
+      .then(data => data.student);
+  }
+
+  return id;
 }
