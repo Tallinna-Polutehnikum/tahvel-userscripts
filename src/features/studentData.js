@@ -1,7 +1,11 @@
 import { msalInstance, msalReady } from './msal.js';
 import * as env from 'env';
 
-calculateStudentData();
+// Run the student data calculation only on Mondays
+// 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+if (new Date().getDay() === 1) {
+  calculateStudentData();
+}
 
 async function getAccessToken() {
   let accessToken;
@@ -30,16 +34,31 @@ async function getAccessToken() {
 
 async function calculateStudentData() {
   const requestId = Math.floor(Math.random() * 1000000);
+  let groupData;
 
-  // Fetch one group
-  let groupData = await fetch('https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE');
-  groupData = await groupData.json();
+  alert('Starting student data collection. This may take a while.');
 
-  // Fetch all groups using totalElements from first fetch
-  groupData = await fetch(
-    `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
-  );
-  groupData = await groupData.json();
+  try {
+    // Fetch one group
+    groupData = await fetch('https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE');
+    groupData = await groupData.json();
+
+    // Fetch all groups using totalElements from first fetch
+    groupData = await fetch(
+      `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
+    );
+    groupData = await groupData.json();
+  } catch (err) {
+    if (err.message.includes('Bad')) {
+      console.error('Stopping due to 400 bad request.');
+      alert('Please check your credentials.');
+      return;
+    } else {
+      console.error(err);
+      alert('An error occurred while fetching group data. Check console for details.');
+      return;
+    }
+  }
 
   // Server switch on
   try {
@@ -48,9 +67,11 @@ async function calculateStudentData() {
   } catch (err) {
     if (err.message.includes('Unauthorized')) {
       console.error('Stopping due to 401 Unauthorized response.');
+      alert('Unauthorized access. Please check your credentials.');
       return;
     } else {
       console.error(err);
+      alert('An error occurred while switching on the server. Check console for details.');
       return;
     }
   }
@@ -172,9 +193,11 @@ async function calculateStudentData() {
       } catch (err) {
         if (err.message.includes('Unauthorized')) {
           console.error('Stopping due to 401 Unauthorized response.');
+          alert('Unauthorized access. Please check your credentials.');
           break mainLoop; // Break the outer loop
         } else {
           console.error(err);
+          alert('An error occurred while posting student data. Check console for details.');
           break mainLoop; // Break the outer loop
         }
       }
@@ -185,12 +208,15 @@ async function calculateStudentData() {
   try {
     await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: false });
     console.log('Finished successfully');
+    alert('Student data collection complete.');
   } catch (err) {
     if (err.message.includes('Unauthorized')) {
       console.error('Stopping due to 401 Unauthorized response.');
+      alert('Unauthorized access. Please check your credentials.');
       return;
     } else {
       console.error(err);
+      alert('An error occurred while switching off the server. Check console for details.');
       return;
     }
   }

@@ -81,6 +81,30 @@ gradeHistoryStyle.textContent = `
     height: 200px;
     text-align: center;
   }
+  .spinner {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 1;
+    width: 120px;
+    height: 120px;
+    margin: -76px 0 0 -76px;
+    border: 16px solid #f3f3f3;
+    border-radius: 50%;
+    border-top: 16px solid #3498db;
+    -webkit-animation: spin 2s linear infinite;
+    animation: spin 2s linear infinite;
+  }
+
+  @-webkit-keyframes spin {
+    0% { -webkit-transform: rotate(0deg); }
+    100% { -webkit-transform: rotate(360deg); }
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 `;
 document.head.appendChild(gradeHistoryStyle);
 
@@ -330,6 +354,12 @@ function createGraphElements(previousElement) {
   loginOverlay.className = 'login-overlay';
   loginOverlay.style.display = 'none';
 
+  // Create loading container
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.id = 'loadingOverlay';
+  loadingOverlay.className = 'login-overlay';
+  loadingOverlay.style.display = 'none';
+
   // Create graph container
   const graphContainer = document.createElement('div');
   graphContainer.id = 'graphContainer';
@@ -394,18 +424,26 @@ function createGraphElements(previousElement) {
   loginContent.appendChild(loginText);
   loginContent.appendChild(loginBtn);
 
-  // Create login form
+  // Create loading content
+  const loadingSpinner = document.createElement('div');
+  loadingSpinner.id = 'spinner';
+  loadingSpinner.className = 'spinner';
+
+  // Append elements
   graphContainer.appendChild(graphControlls);
   graphContainer.appendChild(graph);
 
   loginOverlay.appendChild(loginContent);
 
+  loadingOverlay.appendChild(loadingSpinner);
+
   gradeHistory.appendChild(graphContainer);
   gradeHistory.appendChild(loginOverlay);
+  gradeHistory.appendChild(loadingOverlay);
 
   previousElement.after(gradeHistory);
 
-  return { graph, loginOverlay, graphContainer };
+  return { graph, loginOverlay, graphContainer, loadingOverlay };
 }
 
 function initChart(graph, data) {
@@ -452,6 +490,9 @@ async function fetchGradeHistory() {
       throw new Error('No authenticated user found');
     }
 
+    const loadingOverlay = document.querySelector('#loadingOverlay');
+    loadingOverlay.style.display = 'inline-block';
+
     const tokenRequest = {
       scopes: [env.MSAL_CLIENT_ID + '/.default'], // Your API scopes here
       account: accounts[0], // Use the active or desired account
@@ -468,6 +509,8 @@ async function fetchGradeHistory() {
     }).then(res => res.json());
 
     studentData[studentId] = apiResponse;
+
+    loadingOverlay.style.display = 'none';
 
     return apiResponse;
   } catch (error) {
