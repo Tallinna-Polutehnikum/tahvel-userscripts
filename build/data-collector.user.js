@@ -60,7 +60,9 @@
   }
 
   // src/features/studentData.js
-  calculateStudentData();
+  if ((/* @__PURE__ */ new Date()).getDay() === 1) {
+    calculateStudentData();
+  }
   async function getAccessToken() {
     let accessToken;
     await msalReady;
@@ -80,21 +82,37 @@
   }
   async function calculateStudentData() {
     const requestId = Math.floor(Math.random() * 1e6);
-    let groupData = await fetch("https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE");
-    groupData = await groupData.json();
-    groupData = await fetch(
-      `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
-    );
-    groupData = await groupData.json();
+    let groupData;
+    alert("Starting student data collection. This may take a while.");
+    try {
+      groupData = await fetch("https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE");
+      groupData = await groupData.json();
+      groupData = await fetch(
+        `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
+      );
+      groupData = await groupData.json();
+    } catch (err) {
+      if (err.message.includes("Bad")) {
+        console.error("Stopping due to 400 bad request.");
+        alert("Please check your credentials.");
+        return;
+      } else {
+        console.error(err);
+        alert("An error occurred while fetching group data. Check console for details.");
+        return;
+      }
+    }
     try {
       await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: true });
       console.log("Finished successfully");
     } catch (err) {
       if (err.message.includes("Unauthorized")) {
         console.error("Stopping due to 401 Unauthorized response.");
+        alert("Unauthorized access. Please check your credentials.");
         return;
       } else {
         console.error(err);
+        alert("An error occurred while switching on the server. Check console for details.");
         return;
       }
     }
@@ -188,9 +206,11 @@
         } catch (err) {
           if (err.message.includes("Unauthorized")) {
             console.error("Stopping due to 401 Unauthorized response.");
+            alert("Unauthorized access. Please check your credentials.");
             break mainLoop;
           } else {
             console.error(err);
+            alert("An error occurred while posting student data. Check console for details.");
             break mainLoop;
           }
         }
@@ -199,12 +219,15 @@
     try {
       await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: false });
       console.log("Finished successfully");
+      alert("Student data collection complete.");
     } catch (err) {
       if (err.message.includes("Unauthorized")) {
         console.error("Stopping due to 401 Unauthorized response.");
+        alert("Unauthorized access. Please check your credentials.");
         return;
       } else {
         console.error(err);
+        alert("An error occurred while switching off the server. Check console for details.");
         return;
       }
     }

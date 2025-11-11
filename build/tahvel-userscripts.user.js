@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.7
+// @version      1.3.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
@@ -23,7 +23,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.2.7";
+  var version = "1.3.0";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -1154,6 +1154,30 @@
     height: 200px;
     text-align: center;
   }
+.spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 120px;
+  height: 120px;
+  margin: -76px 0 0 -76px;
+  border: 16px solid #f3f3f3;
+  border-radius: 50%;
+  border-top: 16px solid #3498db;
+  -webkit-animation: spin 2s linear infinite;
+  animation: spin 2s linear infinite;
+}
+
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 `;
   document.head.appendChild(gradeHistoryStyle);
   var hash = window.location.hash;
@@ -1366,6 +1390,10 @@
     loginOverlay.id = "loginOverlay";
     loginOverlay.className = "login-overlay";
     loginOverlay.style.display = "none";
+    const loadingOverlay = document.createElement("div");
+    loadingOverlay.id = "loadingOverlay";
+    loadingOverlay.className = "login-overlay";
+    loadingOverlay.style.display = "none";
     const graphContainer = document.createElement("div");
     graphContainer.id = "graphContainer";
     graphContainer.className = "graph-container";
@@ -1414,13 +1442,18 @@
     });
     loginContent.appendChild(loginText);
     loginContent.appendChild(loginBtn);
+    const loadingSpinner = document.createElement("div");
+    loadingSpinner.id = "spinner";
+    loadingSpinner.className = "spinner";
     graphContainer.appendChild(graphControlls);
     graphContainer.appendChild(graph);
     loginOverlay.appendChild(loginContent);
+    loadingOverlay.appendChild(loadingSpinner);
     gradeHistory.appendChild(graphContainer);
     gradeHistory.appendChild(loginOverlay);
+    gradeHistory.appendChild(loadingOverlay);
     previousElement.after(gradeHistory);
-    return { graph, loginOverlay, graphContainer };
+    return { graph, loginOverlay, graphContainer, loadingOverlay };
   }
   function initChart(graph, data) {
     let processedData = processData(data, simpleMode);
@@ -1455,6 +1488,8 @@
       if (accounts.length === 0) {
         throw new Error("No authenticated user found");
       }
+      const loadingOverlay = document.querySelector("#loadingOverlay");
+      loadingOverlay.style.display = "inline-block";
       const tokenRequest = {
         scopes: [MSAL_CLIENT_ID + "/.default"],
         // Your API scopes here
@@ -1468,6 +1503,7 @@
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
       }).then((res) => res.json());
       studentData[studentId] = apiResponse;
+      loadingOverlay.style.display = "none";
       return apiResponse;
     } catch (error) {
       console.error("Error during fetchWithToken:", error);
