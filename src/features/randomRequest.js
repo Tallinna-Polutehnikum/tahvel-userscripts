@@ -4,5 +4,5 @@ setInterval(() => {
     credentials: 'include',
     headers: { accept: 'application/json, text/plain, */*' },
   });
-  console.log('session extended at: ' + new Date());
+  //console.log('session extended at: ' + new Date());
 }, 120000);
