@@ -1,41 +1,29 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.2.7
+// @version      1.3.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
-// @match        https://tahveltp.edu.ee/*
 // @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
 // @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
-// @grant GM_log
+// @grant        GM_log
+// @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
+
 (() => {
   // src/features/randomRequest.js
-  setTimeout(() => {
-    fetch(`https://tahvel.edu.ee/hois_back/user`, {
-      "headers": {
-        "accept": "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
-        "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "x-requested-with": "XMLHttpRequest"
-      },
-      "referrer": "https://tahvel.edu.ee/",
-      "referrerPolicy": "strict-origin-when-cross-origin",
-      "body": null,
-      "method": "GET",
-      "mode": "cors",
-      "credentials": "include"
+  setInterval(() => {
+    fetch("https://tahvel.edu.ee/hois_back/user", {
+      method: "GET",
+      credentials: "include",
+      headers: { accept: "application/json, text/plain, */*" }
     });
+    console.log("session extended at: " + /* @__PURE__ */ new Date());
   }, 12e4);
 
   // src/version.js
-  var version = "1.2.7";
+  var version = "1.3.0";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -43,16 +31,8 @@
     const userData = await response.json();
     const myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    const raw = JSON.stringify({
-      "user": userData.fullname,
-      "version": version
-    });
-    const requestOptions = {
-      method: "POST",
-      headers: myHeaders,
-      body: raw,
-      redirect: "follow"
-    };
+    const raw = JSON.stringify({ user: userData.fullname, version });
+    const requestOptions = { method: "POST", headers: myHeaders, body: raw, redirect: "follow" };
     const today = /* @__PURE__ */ new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
@@ -67,8 +47,7 @@
   }, 0);
 
   // src/features/teachers.js
-  if (typeof GM_log === "function")
-    console.log = GM_log;
+  if (typeof GM_log === "function") console.log = GM_log;
   (function() {
     "use strict";
     console.log("Tahvel Customization script started");
@@ -139,13 +118,17 @@
       if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='\xD5ppekava t\xE4itmine']`)) {
         let firstModule = document.querySelector(".hois-collapse-parent div:first-of-type > span");
         if (firstModule && !isAlreadyApplied(firstModule)) {
-          console.log("In student profile, add module and journal links", currentStudent?.id != studentId, currentStudent?.id, studentId);
+          console.log(
+            "In student profile, add module and journal links",
+            currentStudent?.id != studentId,
+            currentStudent?.id,
+            studentId
+          );
           if (currentStudent?.id == studentId) {
             addAppliedMarker(firstModule);
             studentProfileModuleAndJournalLinks(studentId);
           }
         }
-        ;
       }
       if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
         let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="\xD5pper\xFChm"] input`);
@@ -183,8 +166,7 @@
         if (myJournals && !isAlreadyApplied(myJournals)) {
           console.log("In journals list, add today's journals first");
           myJournals = addMyJournals();
-          if (myJournals)
-            addAppliedMarker(myJournals);
+          if (myJournals) addAppliedMarker(myJournals);
         }
       }
     });
@@ -229,8 +211,7 @@
       let count = 0;
       grades.forEach((grade) => {
         let lastGrade = grade.trim().split("/").pop().trim();
-        if (lastGrade === "MA" || lastGrade === "X")
-          lastGrade = "0";
+        if (lastGrade === "MA" || lastGrade === "X") lastGrade = "0";
         const parsedGrade = parseFloat(lastGrade);
         if (!isNaN(parsedGrade)) {
           total += parsedGrade;
@@ -246,8 +227,12 @@
         if (gradeTable) {
           observer.disconnect();
           console.log("Found table!");
-          const tableHeaders = gradeTable.querySelectorAll('.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])');
-          const periodGradeHeaders = gradeTable.querySelectorAll('.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]');
+          const tableHeaders = gradeTable.querySelectorAll(
+            '.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])'
+          );
+          const periodGradeHeaders = gradeTable.querySelectorAll(
+            '.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]'
+          );
           const finalGradeHeader = gradeTable.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
           const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
           let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
@@ -265,9 +250,13 @@
           console.log("Period grade columns", periodGradeColumnIndices);
           const rows = gradeTable.querySelectorAll(".tahvel-table tr");
           const headerRow = rows[0];
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach(
+            (header) => header.remove()
+          );
           [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((header) => header.remove());
+          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach(
+            (header) => header.remove()
+          );
           for (let i = 0; i < periodGradeColumnIndices.length; i++) {
             const narrowColumnHeader = document.createElement("th");
             narrowColumnHeader.textContent = "Keskm.";
@@ -358,8 +347,7 @@
               let color = "";
               if (normalizedTotalScore > 0.6)
                 color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-              else
-                color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
+              else color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
               totalColumn.style.backgroundColor = color || "#fff";
             });
           }
@@ -393,43 +381,49 @@
       }
       let tableBody = table?.querySelector("tbody");
       let headerRow = table.querySelector("thead tr");
-      let response1 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
-        "headers": {
-          "accept": "application/json, text/plain, */*",
-          "accept-language": "en-US,en;q=0.9",
-          "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": '"Windows"',
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "x-requested-with": "XMLHttpRequest"
-        },
-        "referrer": "https://tahvel.edu.ee/",
-        "referrerPolicy": "strict-origin-when-cross-origin",
-        "body": null,
-        "method": "GET",
-        "mode": "cors",
-        "credentials": "include"
-      });
+      let response1 = await fetch(
+        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`,
+        {
+          headers: {
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-US,en;q=0.9",
+            "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "x-requested-with": "XMLHttpRequest"
+          },
+          referrer: "https://tahvel.edu.ee/",
+          referrerPolicy: "strict-origin-when-cross-origin",
+          body: null,
+          method: "GET",
+          mode: "cors",
+          credentials: "include"
+        }
+      );
       let dataEntries = await response1.json();
-      let response2 = await fetch(`https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
-        "headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-          "Accept": "application/json, text/plain, */*",
-          "Accept-Language": "en-US,en;q=0.5",
-          "X-Requested-With": "XMLHttpRequest",
-          "Sec-Fetch-Dest": "empty",
-          "Sec-Fetch-Mode": "cors",
-          "Sec-Fetch-Site": "same-origin",
-          "Pragma": "no-cache",
-          "Cache-Control": "no-cache"
-        },
-        "referrer": "https://tahvel.edu.ee/",
-        "method": "GET",
-        "mode": "cors",
-        "credentials": "include"
-      });
+      let response2 = await fetch(
+        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "X-Requested-With": "XMLHttpRequest",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Pragma": "no-cache",
+            "Cache-Control": "no-cache"
+          },
+          referrer: "https://tahvel.edu.ee/",
+          method: "GET",
+          mode: "cors",
+          credentials: "include"
+        }
+      );
       let journalEntries = await response2.json();
       let domIndex = 0;
       let skipHeaders = ["Nr", "\xD5ppija, \xD5pper\xFChm", "Keskm.", "Summa"];
@@ -443,8 +437,7 @@
         let entry = dataEntries.content.find((dataEntry) => dataEntry.id === dateEntry.id);
         let el = entryDOMs[entryIndex];
         let entryType = SissekandedEnum[entry.entryType];
-        if (entry.nameEt !== entryType)
-          entryType += ": " + entry.nameEt;
+        if (entry.nameEt !== entryType) entryType += ": " + entry.nameEt;
         let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
         if (entry.homework) {
           let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString("et") : "";
@@ -457,8 +450,7 @@
           tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + "px";
         });
         el.addEventListener("mouseout", () => {
-          if (tooltip.style.display === "block")
-            tooltip.style.display = "none";
+          if (tooltip.style.display === "block") tooltip.style.display = "none";
         });
         let closestTH = el.parentElement;
         while (closestTH && closestTH.tagName !== "TH") {
@@ -473,8 +465,7 @@
             tooltip.style.left = event.clientX - el2.getBoundingClientRect().width / 2 + "px";
           });
           el2.addEventListener("mouseout", () => {
-            if (tooltip.style.display === "block")
-              tooltip.style.display = "none";
+            if (tooltip.style.display === "block") tooltip.style.display = "none";
           });
         }
       });
@@ -558,7 +549,11 @@
       let columnHeader = document.querySelector("[md-order-by='person.idcode']");
       if (columnHeader) {
         let columnNumber = Array.from(columnHeader.parentElement.children).indexOf(columnHeader);
-        elements = Array.from(columnHeader.parentElement.parentElement.parentElement.querySelectorAll("tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"));
+        elements = Array.from(
+          columnHeader.parentElement.parentElement.parentElement.querySelectorAll(
+            "tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"
+          )
+        );
       }
       elements.forEach((element) => {
         const pin = element.textContent;
@@ -567,116 +562,45 @@
       });
     }
     function negativeResultsToolsInStudentProfile(table, studentId) {
-        const tableHeaders = table.querySelectorAll("thead th");
-        const tableRows = table.querySelectorAll("tbody tr");
-
-        // Count negative final grades and total grades
-        let negativeGrades = 0;
-        let totalGrades = 0;
-        tableRows.forEach(row => {
+      const tableHeaders = table.querySelectorAll("thead th");
+      const tableRows = table.querySelectorAll("tbody tr");
+      let negativeGrades = 0;
+      tableRows.forEach((row) => {
+        let type = row.querySelector("td:nth-child(2)").textContent.trim();
+        let grade = row.querySelector("td:nth-child(3)").textContent.trim();
+        if (["MA", "X", "1", "2"].includes(grade) && type === "L\xF5pptulemus") {
+          negativeGrades++;
+        }
+      });
+      let negativeGradesCounter = document.createElement("span");
+      negativeGradesCounter.textContent = `Negatiivseid l\xF5pptulemusi: ${negativeGrades}`;
+      let onlyNegativeGradesToggle = document.createElement("button");
+      onlyNegativeGradesToggle.textContent = "N\xE4ita neg. hindeid";
+      onlyNegativeGradesToggle.classList.add("md-button", "md-raised");
+      onlyNegativeGradesToggle.style.marginRight = "10px";
+      onlyNegativeGradesToggle.dataset.active = "false";
+      onlyNegativeGradesToggle.addEventListener("click", () => {
+        let active = onlyNegativeGradesToggle.dataset.active === "true";
+        onlyNegativeGradesToggle.dataset.active = !active;
+        onlyNegativeGradesToggle.textContent = active ? "N\xE4ita neg. hindeid" : "N\xE4ita k\xF5iki hindeid";
+        if (active) {
+          (function() {
+            "use strict";
+          })();
+          tableRows.forEach((row) => {
+            row.style.display = "";
+          });
+        } else {
+          tableRows.forEach((row) => {
             let type = row.querySelector("td:nth-child(2)").textContent.trim();
             let grade = row.querySelector("td:nth-child(3)").textContent.trim();
-            if (["MA", "X", "1", "2"].includes(grade) && type === "Lõpptulemus") {
-                negativeGrades++;
+            if (!["MA", "X", "1", "2"].includes(grade) || type !== "L\xF5pptulemus") {
+              row.style.display = "none";
             }
-            if (["MA", "X", "1", "2", "3", "4", "5", "A"].includes(grade) && type === "Lõpptulemus") {
-                totalGrades++;
-            }
-        });
-
-        let negativeGradesPercentage = totalGrades > 0 ? (negativeGrades / totalGrades) * 100 : 0;
-        let negativeGradesCounter = document.createElement("span");
-        negativeGradesCounter.textContent = `Negatiivseid lõpptulemusi: ${negativeGrades} (${negativeGradesPercentage.toFixed(2)}%)`;
-
-
-        // Add filter activation buttons before the table
-        let onlyNegativeGradesToggle = document.createElement("button");
-        onlyNegativeGradesToggle.textContent = "Näita neg. hindeid";
-        onlyNegativeGradesToggle.classList.add("md-button", "md-raised");
-        onlyNegativeGradesToggle.style.marginRight = "10px";
-        onlyNegativeGradesToggle.dataset.active = "false";
-        onlyNegativeGradesToggle.addEventListener("click", () => {
-            let active = onlyNegativeGradesToggle.dataset.active === "true";
-            onlyNegativeGradesToggle.dataset.active = !active;
-            onlyNegativeGradesToggle.textContent = active ? "Näita neg. hindeid" : "Näita kõiki hindeid";
-            if (active) {
-                tableRows.forEach(row => {
-                    row.style.display = "";
-                });
-            } else {
-                tableRows.forEach(row => {
-                    let type = row.querySelector("td:nth-child(2)").textContent.trim();
-                    let grade = row.querySelector("td:nth-child(3)").textContent.trim();
-                    if (!(["MA", "X", "1", "2"].includes(grade)) || type !== "Lõpptulemus") {
-                        row.style.display = "none";
-                    }
-                });
-            }
-        });
-
-        // Hide unnecessary columns
-        let hideColumns = [1, 3];
-        let hideColumnsToggle = document.createElement("button");
-        hideColumnsToggle.textContent = "Peida mittevajalikud veerud";
-        hideColumnsToggle.classList.add("md-button", "md-raised");
-        hideColumnsToggle.style.marginRight = "10px";
-        hideColumnsToggle.dataset.active = "false";
-        hideColumnsToggle.addEventListener("click", () => {
-            let active = hideColumnsToggle.dataset.active === "true";
-            hideColumnsToggle.dataset.active = !active;
-            hideColumnsToggle.textContent = active ? "Peida mittevajalikud veerud" : "Näita kõiki veerge";
-            if (active) {
-                tableRows.forEach(row => {
-                    hideColumns.forEach(index => {
-                        row.children[index].style.display = "";
-                        tableHeaders[index].style.display = "";
-                    });
-                });
-            } else {
-                tableRows.forEach(row => {
-                    hideColumns.forEach(index => {
-                        row.children[index].style.display = "none";
-                        tableHeaders[index].style.display = "none";
-                    });
-                });
-            }
-        });
-
-        // Show journal links in the table
-        let journalLinkToggle = document.createElement("button");
-        journalLinkToggle.textContent = "Lisa päeviku lingid";
-        journalLinkToggle.classList.add("md-button", "md-raised");
-        journalLinkToggle.style.marginRight = "10px";
-        journalLinkToggle.addEventListener("click", () => {
-            fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-                headers: {
-                    "accept": "application/json",
-                }
-            })
-                .then(r => r.json())
-                .then(data => {
-                    tableRows.forEach(row => {
-                        let subject = row.querySelector("td:nth-child(1)").textContent.trim().toLowerCase();
-                        data.forEach(journal => {
-                            if (journal.type === "journal" && subject.startsWith(journal.nameEt.toLowerCase())) {
-                                let journalLink = document.createElement("button");
-                                journalLink.addEventListener("click", () => {
-                                    window.open(`#/journal/${journal.entityId}/edit`, '_blank');
-                                });
-                                journalLink.textContent = "Päevik";
-                                row.querySelector("td:nth-child(1)").appendChild(journalLink);
-                            }
-                        });
-                    });
-                    journalLinkToggle.disabled = true;
-                });
-        });
-
-        table.parentElement.insertBefore(onlyNegativeGradesToggle, table);
-        table.parentElement.insertBefore(hideColumnsToggle, table);
-        table.parentElement.insertBefore(journalLinkToggle, table);
-        table.parentElement.insertBefore(negativeGradesCounter, table);
-    }
+          });
+        }
+      });
+      let hideColumns = [1, 3];
       let hideColumnsToggle = document.createElement("button");
       hideColumnsToggle.textContent = "Peida mittevajalikud veerud";
       hideColumnsToggle.classList.add("md-button", "md-raised");
@@ -708,9 +632,7 @@
       journalLinkToggle.style.marginRight = "10px";
       journalLinkToggle.addEventListener("click", () => {
         fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-          headers: {
-            "accept": "application/json"
-          }
+          headers: { accept: "application/json" }
         }).then((r) => r.json()).then((data) => {
           tableRows.forEach((row) => {
             let subject = row.querySelector("td:nth-child(1)").textContent.trim().toLowerCase();
@@ -736,15 +658,20 @@
     async function studentProfileModuleAndJournalLinks(studentId) {
       const curriculumVersionId = currentStudent?.curriculumVersion?.id;
       const groupCode = currentStudent?.curriculumVersion?.code;
-      const modulesDom = document.querySelectorAll(".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span");
+      const modulesDom = document.querySelectorAll(
+        ".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span"
+      );
       const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
-      let moduleProtocolsResponse = await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`, {
-        headers: { "accept": "application/json" }
-      });
+      let moduleProtocolsResponse = await fetch(
+        `https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
+        { headers: { accept: "application/json" } }
+      );
       let moduleProtocols = await moduleProtocolsResponse.json();
       modulesDom.forEach((moduleDom) => {
         let moduleName = moduleDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
-        moduleProtocols.content.filter((mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName).forEach((mp) => {
+        moduleProtocols.content.filter(
+          (mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName
+        ).forEach((mp) => {
           let moduleLink = document.createElement("a");
           moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
           moduleLink.target = "_blank";
@@ -763,16 +690,15 @@
             newModuleLink.style.color = "gray";
             newModuleLink.textContent = "Laeb...";
             let studyYearResponse = await fetch("https://tahvel.edu.ee/hois_back/school/studyYear/current-or-next-dto", {
-              "credentials": "include",
-              "headers": { "Accept": "application/json, text/plain, */*" },
-              "method": "GET"
+              credentials: "include",
+              headers: { Accept: "application/json, text/plain, */*" },
+              method: "GET"
             });
             let studyYear = await studyYearResponse.json();
-            let studentsResponse = await await fetch(`https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`, {
-              "credentials": "include",
-              "headers": { "Accept": "application/json, text/plain, */*" },
-              "method": "GET"
-            });
+            let studentsResponse = await await fetch(
+              `https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
+              { credentials: "include", headers: { Accept: "application/json, text/plain, */*" }, method: "GET" }
+            );
             let students = await studentsResponse.json();
             let moduleName2 = moduleData.curriculumModule.nameEt;
             if (!(currentStudent.curriculumVersion.id && studyYear.id && students.teacher.id, moduleData.id)) {
@@ -789,27 +715,27 @@
             let confirmText = `Oled loomas uut protokolli moodulile ${moduleName2}. Moodulile m\xE4\xE4ratakse \xF5ppeaasta ${studyYear.nameEt}, \xF5petajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} \xF5pilast.`;
             if (confirm(confirmText)) {
               let newModuleResponse = await fetch("https://tahvel.edu.ee/hois_back/moduleProtocols", {
-                "credentials": "include",
-                "headers": {
+                credentials: "include",
+                headers: {
                   "Accept": "application/json, text/plain, */*",
                   "Content-Type": "application/json;charset=utf-8",
                   "X-XSRF-TOKEN": getCsrfToken()
                 },
-                "body": JSON.stringify({
-                  "protocolVdata": {
-                    "curriculumVersionOccupationModule": moduleData.id,
-                    "curriculumVersion": currentStudent.curriculumVersion.id,
-                    "studyYear": studyYear.id,
-                    "teacher": students.teacher.id
+                body: JSON.stringify({
+                  protocolVdata: {
+                    curriculumVersionOccupationModule: moduleData.id,
+                    curriculumVersion: currentStudent.curriculumVersion.id,
+                    studyYear: studyYear.id,
+                    teacher: students.teacher.id
                   },
-                  "protocolStudents": students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
-                  "type": "module",
-                  "isBasic": false,
-                  "isSecondary": false,
-                  "isHigher": false,
-                  "isVocational": true
+                  protocolStudents: students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
+                  type: "module",
+                  isBasic: false,
+                  isSecondary: false,
+                  isHigher: false,
+                  isVocational: true
                 }),
-                "method": "POST"
+                method: "POST"
               });
               let newModule = await newModuleResponse.json();
               window.open(`#/moduleProtocols/module/${newModule.id}/edit`, "_blank");
@@ -829,7 +755,7 @@
         }
       });
       let journalsResponse = await fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
-        headers: { "accept": "application/json" }
+        headers: { accept: "application/json" }
       });
       let vocationalConnectedEntities = await journalsResponse.json();
       journalsDom.forEach((journal) => {
@@ -846,8 +772,7 @@
     }
     function updateRJAParameters(event) {
       let group = event;
-      if (typeof group === "object" && group.nameEt)
-        group = group.nameEt;
+      if (typeof group === "object" && group.nameEt) group = group.nameEt;
       let year = parseInt(group.match(/\d+/)[0]) + 2e3;
       let date = new Date(year, 7, 1);
       let previousPeriodYear = (/* @__PURE__ */ new Date()).getFullYear() - 1;
@@ -859,8 +784,7 @@
       for (let i = 0; i < 4; i++) {
         document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
           let inputState = input.getAttribute("aria-checked") === "true" ? 1 : 0;
-          if (inputState ^ rjaEntryTypes[index])
-            input.click();
+          if (inputState ^ rjaEntryTypes[index]) input.click();
         });
       }
       let dateInput = document.querySelector(`[ng-model="criteria.from"] input`);
@@ -915,8 +839,6 @@
           negativeFinalGrades
         });
       });
-
-      // Site has 3 rows inside thead, I want to select the last column of every row in thead. On the third row, get last x th elements, based on first row colspan number
       table = document.querySelector(".student-group-teacher-table");
       const columnDataOffset = 2;
       let headerRows = table.querySelectorAll("thead tr");
@@ -926,12 +848,8 @@
       let headerCells = headerRows[2].querySelectorAll("th");
       let lastCells = Array.from(headerCells).slice(-colspan);
       let lastCellIndex = Array.from(headerCells).indexOf(lastCells[0]);
-
-      // Move last 7 cells to the beginning of the table based on lastCellIndex, after 2 column, both for header and body
-      // Notice that first two rows in thead are merged using colspan
       headerRows[0].insertBefore(headerSummaryColumn, headerRows[0].children[1]);
       headerRows[1].insertBefore(headerSummaryColumn2, headerRows[1].children[1]);
-
       let bodyRows = table.querySelectorAll("tbody tr");
       lastCells.forEach((cell, ci) => {
         headerRows[2].insertBefore(cell, headerRows[columnDataOffset].children[columnDataOffset + ci]);
@@ -994,11 +912,10 @@
       let diff = today.getDate() - day + (day == 0 ? -6 : 1);
       let monday = new Date(today.setDate(diff)).toISOString().split("T")[0] + "T00:00:00Z";
       let sunday = new Date(today.setDate(diff + 6)).toISOString().split("T")[0] + "T00:00:00Z";
-      fetch(`https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`, {
-        headers: {
-          "accept": "application/json"
-        }
-      }).then((r) => r.json()).then((timetable) => {
+      fetch(
+        `https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
+        { headers: { accept: "application/json" } }
+      ).then((r) => r.json()).then((timetable) => {
         let alreadyAdded = [];
         let todaysEvents = timetable.timetableEvents.filter((te) => te.journalId && te.date.startsWith(todayStr));
         todaysEvents.forEach((te) => {
@@ -1053,212 +970,68 @@
       });
       return originalSend.apply(this, arguments);
     };
-    addXHRInterceptor((url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"), (data) => {
-      console.log("currentTeacherId:", data.teacher);
-      if (data?.teacher) {
-        localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
-      }
-      if (data?.school?.id) {
-        localStorage.setItem("schoolId", JSON.stringify(data.school.id));
-      }
-      if (data?.name || data?.fullname) {
-        let lastUsage = localStorage.getItem("lastUsage");
-        if (!lastUsage || Date.now() - lastUsage > 36e5) {
-          localStorage.setItem("lastUsage", Date.now());
+    addXHRInterceptor(
+      (url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"),
+      (data) => {
+        console.log("currentTeacherId:", data.teacher);
+        if (data?.teacher) {
+          localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
+        }
+        if (data?.school?.id) {
+          localStorage.setItem("schoolId", JSON.stringify(data.school.id));
+        }
+        if (data?.name || data?.fullname) {
+          let lastUsage = localStorage.getItem("lastUsage");
+          if (!lastUsage || Date.now() - lastUsage > 36e5) {
+            localStorage.setItem("lastUsage", Date.now());
+          }
         }
       }
-    });
-    addXHRInterceptor((url) => url.includes("hois_back/reports/studentgroupteacher"), (data) => {
-      if (oppetoetus) {
-        let a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-        let fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]').value ?? "class-teacher-report";
-        a.download = `${fileName}.json`;
-        a.click();
+    );
+    addXHRInterceptor(
+      (url) => url.includes("hois_back/reports/studentgroupteacher"),
+      (data) => {
+        if (oppetoetus) {
+          let a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+          let fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]').value ?? "class-teacher-report";
+          a.download = `${fileName}.json`;
+          a.click();
+        }
+        currentClassTeacherReport = data;
       }
-      currentClassTeacherReport = data;
-    });
-    addXHRInterceptor((url) => url.match(/hois_back\/students\/\d+$/) !== null, (data) => {
-      currentStudent = data;
-    });
-    addXHRInterceptor((url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/), (data) => {
-      currentStudentModules = data;
-    });
+    );
+    addXHRInterceptor(
+      (url) => url.match(/hois_back\/students\/\d+$/) !== null,
+      (data) => {
+        currentStudent = data;
+      }
+    );
+    addXHRInterceptor(
+      (url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/),
+      (data) => {
+        currentStudentModules = data;
+      }
+    );
   })();
-
-    //#region
-    function cloneCellStyle(fromEl, toEl) {
-        const computedStyle = window.getComputedStyle(fromEl);
-        toEl.style.padding = computedStyle.padding;
-        toEl.style.font = computedStyle.font;
-        toEl.style.verticalAlign = computedStyle.verticalAlign;
-        toEl.style.lineHeight = computedStyle.lineHeight;
-        toEl.style.height = computedStyle.height;
-        toEl.style.borderTop = computedStyle.borderTop;
-        toEl.style.borderBottom = computedStyle.borderBottom;
-        toEl.style.textAlign = computedStyle.textAlign;
-    }
-
-    function injectSeatInfoToColumn(roomData) {
-        const table = document.querySelector("table.md-table");
-        const firstRow = table?.querySelector("tbody tr");
-
-        if (!table || !firstRow || isAlreadyApplied(table)) return;
-
-        const headerCells = table.querySelectorAll("thead th");
-        const headers = Array.from(headerCells).map(th =>
-                                                    th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
-                                                   );
-
-        const roomColIndex = headers.findIndex(text => text === "ruum");
-        const seatsColIndex = headers.findIndex(text => text === "kohtadearv");
-
-        if (roomColIndex === -1 || seatsColIndex === -1) return;
-
-        const headerRow = table.querySelector("thead tr");
-
-        // Lisa uus päise veerg: Arvuteid (positsioon 3)
-        const computersHeader = document.createElement("th");
-        computersHeader.textContent = "Arvuteid";
-        headerRow.insertBefore(computersHeader, headerRow.children[3]);
-        cloneCellStyle(headerRow.children[2], computersHeader);
-
-        // Lisa uus päise veerg: Pindala (positsioon 4)
-        const areaHeader = document.createElement("th");
-        areaHeader.textContent = "Pindala";
-        headerRow.insertBefore(areaHeader, headerRow.children[4]);
-        cloneCellStyle(headerRow.children[2], areaHeader);
-
-        // Lisa uus päise veerg: Arvuteid (positsioon 5)
-        const boardHeader = document.createElement("th");
-        boardHeader.textContent = "Tahvel";
-        headerRow.insertBefore(boardHeader, headerRow.children[5]);
-        cloneCellStyle(headerRow.children[2], boardHeader);
-
-        // Lisa uus päise veerg: Pindala (positsioon 6)
-        const osHeader = document.createElement("th");
-        osHeader.textContent = "OS";
-        headerRow.insertBefore(osHeader, headerRow.children[6]);
-        cloneCellStyle(headerRow.children[2], osHeader);
-
-        const rows = table.querySelectorAll("tbody tr");
-        rows.forEach(row => {
-            const cells = row.querySelectorAll("td");
-            const roomCell = cells[roomColIndex];
-            const roomText = roomCell?.textContent.trim() ?? "";
-
-            const match = roomData.find(r => r.roomNumber === roomText);
-
-            // Täida kohtade arv, kui match leitud
-            if (match && cells[seatsColIndex]) {
-                cells[seatsColIndex].textContent = `${match.seats}`;
-            }
-
-            // Lisa uus lahter: arvutite arv
-            const computersCell = document.createElement("td");
-            computersCell.textContent = match?.computers ?? "";
-            row.insertBefore(computersCell, row.children[3]);
-            cloneCellStyle(row.children[2], computersCell);
-
-            // Lisa uus lahter: pindala
-            const areaCell = document.createElement("td");
-            areaCell.textContent = match?.area ? `${match.area}m²` : "";
-            row.insertBefore(areaCell, row.children[4]);
-            cloneCellStyle(row.children[2], areaCell);
-
-            // Lisa uus lahter: tahvel
-            const boardCell = document.createElement("td");
-            boardCell.textContent = match?.board ?? "";
-            row.insertBefore(boardCell, row.children[5]);
-            cloneCellStyle(row.children[2], boardCell);
-
-            // Lisa uus lahter: os
-            const osCell = document.createElement("td");
-            osCell.textContent = match?.os ?? "";
-            row.insertBefore(osCell, row.children[6]);
-            cloneCellStyle(row.children[2], osCell);
-        });
-
-        addAppliedMarker(table);
-    }
-
-    if (location.hash.startsWith('#/lessonplans/rooms')) {
-        observeTargetChange(document.body, () => {
-            injectSeatInfoToColumn([
-                {"roomNumber":"A101","seats":"35","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A102","seats":"16","computers":"9","area":"58","board":"valgetahvel","os":"Windows"},{"roomNumber":"A107","seats":"20","computers":"21","area":"72","board":"valgetahvel","os":"Windows"},{"roomNumber":"A108","seats":"30","computers":"31","area":"66","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A111","seats":"20","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A116","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A117","seats":"18","computers":"","area":"52","board":"","os":"Windows"},{"roomNumber":"A118","seats":"20","computers":"","area":"58","board":"puudub","os":"Windows"},{"roomNumber":"A201","seats":"34","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A202","seats":"50","computers":"1","area":"76","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A209","seats":"30","computers":"1","area":"45","board":"valgetahvel","os":"Windows"},{"roomNumber":"A210","seats":"24","computers":"23","area":"43","board":"","os":"Windows"},{"roomNumber":"A213","seats":"16","computers":"","area":"48","board":"puudub","os":""},{"roomNumber":"A216","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A217","seats":"34","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A301","seats":"34","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A302","seats":"34","computers":"35","area":"75","board":"valgetahvel","os":"Windows"},{"roomNumber":"A303","seats":"15","computers":"","area":"??","board":"","os":""},{"roomNumber":"A304","seats":"38","computers":"1","area":"54","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A306","seats":"35","computers":"1","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A307","seats":"16","computers":"17","area":"55","board":"valgetahvel","os":"Windows"},{"roomNumber":"A308","seats":"32","computers":"33","area":"53","board":"valgetahvel","os":"Windows"},{"roomNumber":"A309","seats":"15","computers":"18","area":"51","board":"valgetahvel","os":"Windows"},{"roomNumber":"A310","seats":"36","computers":"1","area":"45","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A311","seats":"34","computers":"1","area":"36","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A314","seats":"30","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A315","seats":"36","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A401","seats":"30","computers":"1","area":"46","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A402","seats":"30","computers":"31","area":"78","board":"valgetahvel","os":"Windows"},{"roomNumber":"A404","seats":"36","computers":"1","area":"55","board":"valgetahvel","os":"Windows"},{"roomNumber":"A403","seats":"15","computers":"","area":"??","board":"","os":""},{"roomNumber":"A405","seats":"26","computers":"1","area":"45","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A406","seats":"34","computers":"1","area":"42","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A407","seats":"140","computers":"1","area":"163","board":"","os":"Windows"},{"roomNumber":"A410","seats":"34","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A414","seats":"16","computers":"1","area":"38","board":"","os":"Windows"},{"roomNumber":"A415","seats":"36","computers":"1","area":"52","board":"kriiditahvel","os":"Windows"},{"roomNumber":"A002","seats":"30","computers":"58","area":"139","board":"","os":"Windows"},{"roomNumber":"A003","seats":"9","computers":"1","area":"30","board":"","os":"Windows"},{"roomNumber":"A007a007b","seats":"7","computers":"","area":"20","board":"","os":""},{"roomNumber":"A008","seats":"20","computers":"1","area":"95","board":"","os":"Windows"},{"roomNumber":"A008a","seats":"0","computers":"","area":"20","board":"","os":""},{"roomNumber":"A009","seats":"8","computers":"2","area":"37","board":"","os":"OS X"},{"roomNumber":"A010","seats":"6","computers":"1","area":"47","board":"","os":"Windows"},{"roomNumber":"B036038","seats":"0","computers":"","area":"78","board":"","os":""},{"roomNumber":"B046","seats":"30","computers":"20","area":"104","board":"valgetahvel","os":"Windows"},{"roomNumber":"B047","seats":"0","computers":"1","area":"36","board":"valgetahvel","os":"Windows"},{"roomNumber":"B100","seats":"36","computers":"","area":"369","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"T411","seats":"30","computers":"31","area":"52","board":"puudub","os":"Windows"},{"roomNumber":"T412","seats":"31","computers":"31","area":"65","board":"puudub","os":"Windows"},{"roomNumber":"T413","seats":"0","computers":"","area":"100","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"","seats":"","computers":"","area":"","board":"","os":""},{"roomNumber":"B113","seats":"40","computers":"16","area":"110","board":"","os":"Windows"},{"roomNumber":"B116","seats":"2","computers":"","area":"","board":"","os":""},{"roomNumber":"B200","seats":"4","computers":"1","area":"46","board":"","os":"OS X"},{"roomNumber":"B201","seats":"24","computers":"","area":"76","board":"","os":"OS X"},{"roomNumber":"B202","seats":"7","computers":"","area":"37","board":"","os":""},{"roomNumber":"B204","seats":"4","computers":"","area":"37","board":"","os":""},{"roomNumber":"B206","seats":"20","computers":"21","area":"37","board":"valgetahvel","os":"OS X"},{"roomNumber":"B207","seats":"8","computers":"","area":"37","board":"","os":""},{"roomNumber":"B210","seats":"12","computers":"12","area":"38","board":"valgetahvel","os":"OS X"},{"roomNumber":"B211","seats":"32","computers":"1","area":"55","board":"valgetahvel","os":"OS X"},{"roomNumber":"B306","seats":"25","computers":"27","area":"55","board":"valgetahvel","os":"OS X"},{"roomNumber":"B307","seats":"31","computers":"31","area":"56","board":"valgetahvel","os":"Windows"},{"roomNumber":"B315","seats":"20","computers":"21","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B316","seats":"16","computers":"17","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B317","seats":"10","computers":"","area":"38","board":"","os":""},{"roomNumber":"B318","seats":"18","computers":"19","area":"57","board":"valgetahvel","os":"Windows"},{"roomNumber":"B405","seats":"32","computers":"1","area":"55","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B407","seats":"32","computers":"","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B409","seats":"28","computers":"1","area":"56","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B414","seats":"18","computers":"1","area":"38","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B416","seats":"28","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B417","seats":"36","computers":"1","area":"57","board":"kriiditahvel","os":"Windows"},{"roomNumber":"B508","seats":"8","computers":"4","area":"24","board":"","os":"OS X"},{"roomNumber":"B510","seats":"16","computers":"16","area":"48","board":"","os":"OS X"},{"roomNumber":"B511","seats":"8","computers":"8","area":"24","board":"","os":"OS X"},{"roomNumber":"B512","seats":"8","computers":"8","area":"24","board":"","os":"OS X"},{"roomNumber":"B513","seats":"8","computers":"","area":"25","board":"","os":""}
-            ]);
-        });
-    }
-    //#endregion
-})();
-
-const groupDuration = {
-    "AA": 2.8062970568104038,
-    "AV": 2.8145106091718,
-    "EA": 2.8062970568104038,
-    "EV": 2.8145106091718,
-    "FS": 1.4757015742642026,
-    "IT": 3.805612594113621,
-    "KEE": 1.754962354551677,
-    "KEV": 1.754962354551677,
-    "KIT": 1.754962354551677,
-    "KJE5": 0.4134154688569473,
-    "KLT": 2.2587268993839835,
-    "KMS": 1.754962354551677,
-    "KSE5": 0.7008898015058179,
-    "KTA": 1.754962354551677,
-    "KTO": 0.758384668035592,
-    "KTS": 1.754962354551677,
-    "KV": 0.6789869952087612,
-    "LA": 2.8145106091718,
-    "MM": 2.8062970568104038,
-    "MS": 1.8206707734428473,
-    "SA": 2.8062970568104038,
-    "TA": 3.805612594113621,
-    "TJE": 0.9801505817932923,
-    "TO": 1.0075290896646132,
-    "TS": 1.8206707734428473,
-    "TT": 2.8062970568104038,
-    "VM": 2.8062970568104038
-}
-
-/**
- * Ma ei tea veel kas teha hardcoded eesliidese järgi pikkused või teha gruppide päringu ajal arvutus ja cacheda see localstorage-sse.
- * https://tahvel.edu.ee/hois_back/autocomplete/studentgroups?lang=ET
- */
-function getAllGroupDurations(groups) {
-    let durations = {};
-    groups.forEach(data => {
-        const groupCode = data.nameEt.split("-")[0];
-
-        // Calculate duration in years
-        const validFrom = new Date(data.validFrom);
-        const validThru = new Date(data.validThru);
-        const durationMilliseconds = validThru - validFrom;
-        const durationYears = durationMilliseconds / (1000 * 60 * 60 * 24 * 365.25);
-        durations[groupCode] = durationYears;
-        //allgroups.push({ groupCode, durationYears, data })
-    });
-    return durations;
-}
   function simulateTyping(inputElement, text, latency, interResponseTime) {
     inputElement.value = text;
     inputElement.dispatchEvent(new Event("input", { bubbles: true }));
   }
   var SissekandedEnum = {
-    "SISSEKANNE_EX": "Eksam",
-    "SISSEKANNE_E": "E-\xF5pe",
-    "SISSEKANNE_H": "Hindamine",
-    "SISSEKANNE_HO": "Hoolsus",
-    "SISSEKANNE_I": "Iseseisev t\xF6\xF6",
-    "SISSEKANNE_C": "Kontrollt\xF6\xF6",
-    "SISSEKANNE_KU": "Kursuse hinne",
-    "SISSEKANNE_K": "K\xE4itumine",
-    "SISSEKANNE_L": "L\xF5pptulemus",
-    "SISSEKANNE_R": "Perioodi hinne",
-    "SISSEKANNE_P": "Praktiline t\xF6\xF6",
-    "SISSEKANNE_T": "Tund",
-    "SISSEKANNE_O": "\xD5piv\xE4ljund"
+    SISSEKANNE_EX: "Eksam",
+    SISSEKANNE_E: "E-\xF5pe",
+    SISSEKANNE_H: "Hindamine",
+    SISSEKANNE_HO: "Hoolsus",
+    SISSEKANNE_I: "Iseseisev t\xF6\xF6",
+    SISSEKANNE_C: "Kontrollt\xF6\xF6",
+    SISSEKANNE_KU: "Kursuse hinne",
+    SISSEKANNE_K: "K\xE4itumine",
+    SISSEKANNE_L: "L\xF5pptulemus",
+    SISSEKANNE_R: "Perioodi hinne",
+    SISSEKANNE_P: "Praktiline t\xF6\xF6",
+    SISSEKANNE_T: "Tund",
+    SISSEKANNE_O: "\xD5piv\xE4ljund"
   };
   function getCsrfToken() {
     const match = document.cookie.match(new RegExp("(^| )XSRF-TOKEN=([^;]+)"));
@@ -1266,5 +1039,489 @@ function getAllGroupDurations(groups) {
       return decodeURIComponent(match[2]);
     }
     return null;
+  }
+
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
+  // src/features/msal.js
+  var msalInstance;
+  var msalReady = new Promise((resolve) => {
+    let gradeHistoryScript = document.getElementById("msal-script");
+    function onMsalReady() {
+      resolve(initMsal());
+    }
+    if (!gradeHistoryScript) {
+      gradeHistoryScript = document.createElement("script");
+      gradeHistoryScript.id = "msal-script";
+      gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
+      gradeHistoryScript.type = "text/javascript";
+      gradeHistoryScript.onload = onMsalReady;
+      document.body.appendChild(gradeHistoryScript);
+    } else if (window.msal && window.PublicClientApplication) {
+      resolve(initMsal());
+    } else {
+      gradeHistoryScript.onload = onMsalReady;
+    }
+  });
+  function initMsal() {
+    const msalConfig = {
+      auth: {
+        clientId: MSAL_CLIENT_ID,
+        authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+        redirectUri: "https://tahvel.edu.ee/"
+      },
+      cache: { cacheLocation: "localStorage" }
+    };
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    return msalInstance;
+  }
+
+  // src/features/gradeHistory.js
+  window.addEventListener("hashchange", () => {
+    hash = window.location.hash;
+    gradeHistoryMain();
+  });
+  var exampleData = {
+    grades: [
+      { date: "29.09", negativeGrades: "1", fineGrades: "3", goodGrades: "5", greatGrades: "5" },
+      { date: "07.10", negativeGrades: "2", fineGrades: "4", goodGrades: "6", greatGrades: "6" },
+      { date: "14.10", negativeGrades: "1", fineGrades: "4", goodGrades: "7", greatGrades: "7" },
+      { date: "21.10", negativeGrades: "3", fineGrades: "5", goodGrades: "8", greatGrades: "8" },
+      { date: "28.10", negativeGrades: "2", fineGrades: "5", goodGrades: "9", greatGrades: "9" },
+      { date: "04.11", negativeGrades: "4", fineGrades: "6", goodGrades: "10", greatGrades: "10" },
+      { date: "11.11", negativeGrades: "2", fineGrades: "6", goodGrades: "11", greatGrades: "11" },
+      { date: "18.11", negativeGrades: "3", fineGrades: "7", goodGrades: "12", greatGrades: "12" },
+      { date: "25.11", negativeGrades: "1", fineGrades: "7", goodGrades: "13", greatGrades: "13" },
+      { date: "02.12", negativeGrades: "2", fineGrades: "8", goodGrades: "14", greatGrades: "14" },
+      { date: "09.12", negativeGrades: "3", fineGrades: "8", goodGrades: "15", greatGrades: "15" },
+      { date: "16.12", negativeGrades: "2", fineGrades: "9", goodGrades: "16", greatGrades: "16" },
+      { date: "23.12", negativeGrades: "5", fineGrades: "9", goodGrades: "17", greatGrades: "17" },
+      { date: "30.12", negativeGrades: "6", fineGrades: "10", goodGrades: "18", greatGrades: "18" },
+      { date: "06.01", negativeGrades: "8", fineGrades: "11", goodGrades: "19", greatGrades: "19" },
+      { date: "13.01", negativeGrades: "10", fineGrades: "12", goodGrades: "20", greatGrades: "20" },
+      { date: "20.01", negativeGrades: "9", fineGrades: "13", goodGrades: "21", greatGrades: "21" },
+      { date: "27.01", negativeGrades: "7", fineGrades: "14", goodGrades: "22", greatGrades: "22" },
+      { date: "03.02", negativeGrades: "6", fineGrades: "15", goodGrades: "23", greatGrades: "23" },
+      { date: "10.02", negativeGrades: "5", fineGrades: "16", goodGrades: "24", greatGrades: "24" },
+      { date: "17.02", negativeGrades: "4", fineGrades: "17", goodGrades: "25", greatGrades: "25" },
+      { date: "24.02", negativeGrades: "3", fineGrades: "18", goodGrades: "26", greatGrades: "26" },
+      { date: "03.03", negativeGrades: "2", fineGrades: "19", goodGrades: "27", greatGrades: "27" },
+      { date: "10.03", negativeGrades: "2", fineGrades: "20", goodGrades: "28", greatGrades: "28" },
+      { date: "17.03", negativeGrades: "1", fineGrades: "21", goodGrades: "29", greatGrades: "29" }
+    ],
+    absences: [
+      { date: "29.09", withReason: "2", noReason: "1", metric: "90" },
+      { date: "29.09", withReason: "3", noReason: "2", metric: "80" },
+      { date: "29.09", withReason: "4", noReason: "3", metric: "70" },
+      { date: "29.09", withReason: "5", noReason: "4", metric: "60" }
+    ]
+  };
+  var studentData = {};
+  var gradeHistoryStyle = document.createElement("style");
+  gradeHistoryStyle.textContent = `
+  .chart-container {
+    position: relative;
+    height: 400px;
+    margin: 2px;
+    border: 1px solid #d9d9d6;
+  }
+  .graph-container {
+    width: 100%;
+    height: 90%;
+  }
+  .login-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px); /* Modern browsers - blurs background */
+    z-index: 1;
+  }
+  .login-box {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    width: 300px;
+    height: 200px;
+    text-align: center;
+  }
+.spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 120px;
+  height: 120px;
+  margin: -76px 0 0 -76px;
+  border: 16px solid #f3f3f3;
+  border-radius: 50%;
+  border-top: 16px solid #3498db;
+  -webkit-animation: spin 2s linear infinite;
+  animation: spin 2s linear infinite;
+}
+
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+`;
+  document.head.appendChild(gradeHistoryStyle);
+  var hash = window.location.hash;
+  var simpleMode = true;
+  var graphType = "grades";
+  async function createGradeHistory() {
+    if (hash.includes("/results") || hash.includes("/myResults")) {
+      const init = () => {
+        const mainContent = document.querySelector("#main-content");
+        const fieldSet = mainContent?.querySelector("fieldset");
+        if (mainContent && fieldSet) {
+          let elements;
+          let graph = mainContent.querySelector("#gradeHistoryGraph");
+          let loginOverlay = mainContent.querySelector("#loginOverlay");
+          if (!graph || !loginOverlay) {
+            elements = createGraphElements(fieldSet);
+            graph = elements.graph;
+            loginOverlay = elements.loginOverlay;
+          }
+          if (!manageLogin(graph, loginOverlay)) {
+            initChart(graph, exampleData);
+          }
+          return true;
+        }
+        return false;
+      };
+      if (!init()) {
+        const observer = new MutationObserver(() => {
+          if (init()) {
+            observer.disconnect();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    }
+  }
+  async function gradeHistoryMain() {
+    console.log("Initializing grade history feature...");
+    await createGradeHistory();
+    if ((hash.includes("/results") || hash.includes("/myResults")) && document.querySelector("#gradeHistoryContainer")) {
+      window.location.reload();
+    }
+  }
+  gradeHistoryMain();
+  var request = { scopes: ["openid", "profile"] };
+  function manageLogin(graph, loginOverlay) {
+    console.log("Managing login state...");
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length === 0) {
+      console.log("No accounts found, showing login overlay.");
+      loginOverlay.style.display = "flex";
+      return false;
+    }
+    msalInstance.setActiveAccount(accounts[0]);
+    const silentRequest = { ...request, account: accounts[0] };
+    msalInstance.acquireTokenSilent(silentRequest).then(async (response) => {
+      loginOverlay.style.display = "none";
+      initChart(graph, await fetchGradeHistory());
+    }).catch((error) => {
+      console.log("Silent token acquisition failed, showing login overlay.");
+      console.error(error);
+      loginOverlay.style.display = "flex";
+    });
+    return true;
+  }
+  function processData(data) {
+    let processedData = {
+      grades: {
+        dates: [],
+        negativeGrades: [],
+        positiveGrades: [],
+        fineGrades: [],
+        goodGrades: [],
+        greatGrades: [],
+        gradeTotal: []
+      },
+      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [] }
+    };
+    data.grades.forEach((e) => {
+      processedData.grades.dates.push(e.date);
+      processedData.grades.negativeGrades.push(e.negativeGrades);
+      processedData.grades.positiveGrades.push(+e.fineGrades + +e.goodGrades + +e.greatGrades);
+      processedData.grades.fineGrades.push(e.fineGrades);
+      processedData.grades.goodGrades.push(e.goodGrades);
+      processedData.grades.greatGrades.push(e.greatGrades);
+      processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
+    });
+    data.absences.forEach((e) => {
+      processedData.absences.dates.push(e.date);
+      processedData.absences.noReason.push(e.noReason);
+      processedData.absences.withReason.push(e.withReason);
+      processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
+      processedData.absences.lessons.push((+e.noReason + +e.withReason) * 100 / +e.metric);
+    });
+    return processedData;
+  }
+  function graphData(data, graphType2) {
+    let datasetSimple = [
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "positiivseid hindeid",
+        data: data.grades.positiveGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    let datasetAdvanced = [
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "rahuldavaid hindeid",
+        data: data.grades.fineGrades,
+        borderWidth: 2,
+        borderColor: "#fa8231",
+        backgroundColor: "#fd9644",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "h\xE4id hindeid",
+        data: data.grades.goodGrades,
+        borderWidth: 2,
+        borderColor: "#f7b731",
+        backgroundColor: "#fed330",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "suurep\xE4raseid hindeid",
+        data: data.grades.greatGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    if (graphType2 == "grades") {
+      return {
+        labels: data.grades.dates,
+        datasets: [
+          ...simpleMode ? datasetSimple : datasetAdvanced,
+          { label: "hindeid kokku", data: data.grades.gradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
+        ]
+      };
+    } else if (graphType2 == "absences") {
+      return {
+        labels: data.absences.dates,
+        datasets: [
+          {
+            label: "p\xF5hjuseta puudumised",
+            data: data.absences.noReason,
+            borderWidth: 2,
+            borderColor: "#a5b1c2",
+            backgroundColor: "#d1d8e0",
+            fill: true,
+            stack: "absences"
+          },
+          {
+            label: "p\xF5hjusega puudumised",
+            data: data.absences.withReason,
+            borderWidth: 2,
+            borderColor: "#3867d6",
+            backgroundColor: "#4b7bec",
+            fill: true,
+            stack: "absences"
+          },
+          {
+            label: "puudumisi kokku",
+            data: data.absences.absencesTotal,
+            borderColor: "#2d98da",
+            backgroundColor: "#45aaf2",
+            fill: true,
+            stack: "none"
+          },
+          {
+            label: "tunde kokku",
+            data: data.absences.lessons,
+            borderColor: "#4b6584",
+            backgroundColor: "#778ca3",
+            fill: true
+          }
+        ]
+      };
+    }
+  }
+  function createGraphElements(previousElement) {
+    const gradeHistory = document.createElement("div");
+    gradeHistory.id = "gradeHistoryContainer";
+    gradeHistory.className = "chart-container";
+    const loginOverlay = document.createElement("div");
+    loginOverlay.id = "loginOverlay";
+    loginOverlay.className = "login-overlay";
+    loginOverlay.style.display = "none";
+    const loadingOverlay = document.createElement("div");
+    loadingOverlay.id = "loadingOverlay";
+    loadingOverlay.className = "login-overlay";
+    loadingOverlay.style.display = "none";
+    const graphContainer = document.createElement("div");
+    graphContainer.id = "graphContainer";
+    graphContainer.className = "graph-container";
+    const graphControlls = document.createElement("div");
+    const graphDataBtn = document.createElement("a");
+    graphDataBtn.id = "graphDataBtn";
+    graphDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
+    graphDataBtn.text = "Hinnete vaade";
+    const graphModeBtn = document.createElement("a");
+    graphModeBtn.id = "graphModeBtn";
+    graphModeBtn.className = "md-raised md-secondary md-button md-ink-ripple";
+    graphModeBtn.text = "Lihtne vaade";
+    graphDataBtn.addEventListener("click", () => {
+      graphType = graphType === "grades" ? "absences" : "grades";
+      graphDataBtn.text = graphDataBtn.text === "Hinnete vaade" ? "Puudumiste vaade" : "Hinnete vaade";
+      document.querySelector("#graphModeBtn").style.display = graphDataBtn.text === "Hinnete vaade" ? "inline-block" : "none";
+      createGradeHistory();
+    });
+    graphModeBtn.addEventListener("click", () => {
+      simpleMode = !simpleMode;
+      graphModeBtn.text = graphModeBtn.text === "Lihtne vaade" ? "T\xE4iustatud vaade" : "Lihtne vaade";
+      createGradeHistory();
+    });
+    graphControlls.appendChild(graphDataBtn);
+    graphControlls.appendChild(graphModeBtn);
+    const graph = document.createElement("canvas");
+    graph.id = "gradeHistoryGraph";
+    graph.height = "100%";
+    graph.width = "100%";
+    graph.style.margin = "2px";
+    const loginContent = document.createElement("div");
+    loginContent.id = "loginContent";
+    loginContent.className = "login-box";
+    const loginText = document.createElement("h1");
+    loginText.textContent = "Logi sisse hinnete ajaloo n\xE4gemiseks";
+    const loginBtn = document.createElement("a");
+    loginBtn.id = "loginBtn";
+    loginBtn.className = "md-raised md-primary md-button md-ink-ripple";
+    loginBtn.text = "Logi sisse";
+    loginBtn.addEventListener("click", () => {
+      msalInstance.loginPopup({ scopes: ["user.read"] }).then((response) => {
+        manageLogin(graph, loginOverlay);
+      }).catch((error) => {
+        alert("Login failed: " + error);
+      });
+    });
+    loginContent.appendChild(loginText);
+    loginContent.appendChild(loginBtn);
+    const loadingSpinner = document.createElement("div");
+    loadingSpinner.id = "spinner";
+    loadingSpinner.className = "spinner";
+    graphContainer.appendChild(graphControlls);
+    graphContainer.appendChild(graph);
+    loginOverlay.appendChild(loginContent);
+    loadingOverlay.appendChild(loadingSpinner);
+    gradeHistory.appendChild(graphContainer);
+    gradeHistory.appendChild(loginOverlay);
+    gradeHistory.appendChild(loadingOverlay);
+    previousElement.after(gradeHistory);
+    return { graph, loginOverlay, graphContainer, loadingOverlay };
+  }
+  function initChart(graph, data) {
+    let processedData = processData(data, simpleMode);
+    let myChart = Chart.getChart(graph);
+    if (!myChart) {
+      myChart = new Chart(graph, {
+        type: "line",
+        data: graphData(processedData, graphType),
+        options: {
+          plugins: {
+            tooltip: { mode: "index", intersect: false },
+            legend: {
+              labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" }
+            }
+          },
+          scales: { y: { stacked: true } }
+        }
+      });
+      return;
+    }
+    myChart.data = graphData(processedData, graphType);
+    myChart.update();
+  }
+  async function fetchGradeHistory() {
+    try {
+      const studentId = await getStudentId();
+      console.log(studentData);
+      if (studentData && studentData[studentId]) {
+        return studentData[studentId];
+      }
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) {
+        throw new Error("No authenticated user found");
+      }
+      const loadingOverlay = document.querySelector("#loadingOverlay");
+      loadingOverlay.style.display = "inline-block";
+      const tokenRequest = {
+        scopes: [MSAL_CLIENT_ID + "/.default"],
+        // Your API scopes here
+        account: accounts[0]
+        // Use the active or desired account
+      };
+      const response = await msalInstance.acquireTokenSilent(tokenRequest);
+      const accessToken = response.accessToken;
+      const apiResponse = await fetch(SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+      }).then((res) => res.json());
+      studentData[studentId] = apiResponse;
+      loadingOverlay.style.display = "none";
+      return apiResponse;
+    } catch (error) {
+      console.error("Error during fetchWithToken:", error);
+      throw error;
+    }
+  }
+  function getStudentId() {
+    let id = null;
+    const url = window.location.href;
+    const match = url.match(/\/students\/(\d+)/);
+    id = match ? match[1] : null;
+    if (!id) {
+      id = fetch("https://tahvel.edu.ee/hois_back/user", {
+        method: "GET",
+        credentials: "include",
+        headers: { accept: "application/json, text/plain, */*" }
+      }).then((res) => res.json()).then((data) => data.student);
+    }
+    return id;
   }
 })();
