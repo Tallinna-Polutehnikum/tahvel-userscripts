@@ -523,7 +523,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
     );
     let dataEntries = await response1.json();
     let response2 = await fetch(
-      `${TAHVEL_API_URL}/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
+      `${TAHVEL_API_URL}/journals/${journalId}/journalEntriesByDate?allStudents=false`,
       {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
@@ -719,6 +719,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
     const tableRows = table.querySelectorAll('tbody tr');
 
     // Count negative final grades
+    let totalGrades = 0;
     let negativeGrades = 0;
     tableRows.forEach(row => {
       let type = row.querySelector('td:nth-child(2)').textContent.trim();
@@ -874,7 +875,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
             method: 'GET',
           });
           let studyYear = await studyYearResponse.json();
-          let studentsResponse = await await fetch(
+          let studentsResponse = await fetch(
             `${TAHVEL_API_URL}/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
             { credentials: 'include', headers: { Accept: 'application/json, text/plain, */*' }, method: 'GET' }
           );
