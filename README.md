@@ -8,7 +8,7 @@ Vali [Tampermonkey koduelehelt](https://www.tampermonkey.net/index.php?locale=en
 Pärast laienduse paigaldamist tuleb lisada Tahvli jaoks skript. Alustuseks otsi üles tööriistariba pealt Tampermonkey logo (see võib olla peidus ka kolme punkti/kriipsu või pusletüki taga menüüs).  
 Seejärel saad valida `Create a new script...`  
 ![create-script](https://github.com/user-attachments/assets/23a32bc9-87cb-446a-ad4f-5e23d9d9c876)  
-Avanevasse aknasse tuleks kleepida [teachers.js](https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/teachers.js) faili seest kogu kood, seejärel salvestada (Ctrl+S)
+Avanevasse aknasse tuleks kleepida [teachers.js](https://github.com/Tallinna-Polutehnikum/tahvel-userscripts/raw/refs/heads/main/build/tahvel-userscripts.user.js) faili seest kogu kood, seejärel salvestada (Ctrl+S)
 
 Kui kõik õigesti läks siis Tahvlisse minnes Tampermonkey näitab seda skripti nime ja rohelist nuppu - kõik toimib.
 ![install-success](https://github.com/user-attachments/assets/031166d6-4f85-4768-98d4-fa98bc4a4eaa)
