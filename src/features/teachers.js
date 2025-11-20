@@ -6,6 +6,9 @@ if (typeof GM_log === 'function') console.log = GM_log;
   'use strict';
   console.log('Tahvel Customization script started');
 
+  // Use API based on current origin, needed for tahveltp.edu.ee
+  const TAHVEL_API_URL = window.location.origin+'/hois_back';
+
   // get 31 of december of previous year, for õppetoetus (manually enable) TODO needs improvement in september
   let oppetoetus = false; // Will change class-teacher (rühmajuhataja) raport to get previous semester data needed for grant, this is WIP and needs programmer attention
 
@@ -497,7 +500,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
 
     // TODO cached fetch to avoid multiple requests during re-renders
     let response1 = await fetch(
-      `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`,
+      `${TAHVEL_API_URL}/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`,
       {
         headers: {
           'accept': 'application/json, text/plain, */*',
@@ -510,7 +513,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
           'sec-fetch-site': 'same-origin',
           'x-requested-with': 'XMLHttpRequest',
         },
-        referrer: 'https://tahvel.edu.ee/',
+        referrer: `${window.location.origin}/`,
         referrerPolicy: 'strict-origin-when-cross-origin',
         body: null,
         method: 'GET',
@@ -520,7 +523,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
     );
     let dataEntries = await response1.json();
     let response2 = await fetch(
-      `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
+      `${TAHVEL_API_URL}/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
       {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
@@ -533,7 +536,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
           'Pragma': 'no-cache',
           'Cache-Control': 'no-cache',
         },
-        referrer: 'https://tahvel.edu.ee/',
+        referrer: `${window.location.origin}/`,
         method: 'GET',
         mode: 'cors',
         credentials: 'include',
@@ -790,7 +793,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
     journalLinkToggle.classList.add('md-button', 'md-raised');
     journalLinkToggle.style.marginRight = '10px';
     journalLinkToggle.addEventListener('click', () => {
-      fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+      fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
         headers: { accept: 'application/json' },
       })
         .then(r => r.json())
@@ -830,7 +833,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
 
     // Query moduleProtocols
     let moduleProtocolsResponse = await fetch(
-      `https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
+      `${TAHVEL_API_URL}/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
       { headers: { accept: 'application/json' } }
     );
     let moduleProtocols = await moduleProtocolsResponse.json();
@@ -865,14 +868,14 @@ if (typeof GM_log === 'function') console.log = GM_log;
           newModuleLink.style.color = 'gray';
           newModuleLink.textContent = 'Laeb...';
           // perpare data and show it in confirm dialog
-          let studyYearResponse = await fetch('https://tahvel.edu.ee/hois_back/school/studyYear/current-or-next-dto', {
+          let studyYearResponse = await fetch(`${TAHVEL_API_URL}/school/studyYear/current-or-next-dto`, {
             credentials: 'include',
             headers: { Accept: 'application/json, text/plain, */*' },
             method: 'GET',
           });
           let studyYear = await studyYearResponse.json();
           let studentsResponse = await await fetch(
-            `https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
+            `${TAHVEL_API_URL}/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
             { credentials: 'include', headers: { Accept: 'application/json, text/plain, */*' }, method: 'GET' }
           );
           let students = await studentsResponse.json();
@@ -892,7 +895,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
 
           let confirmText = `Oled loomas uut protokolli moodulile ${moduleName}. Moodulile määratakse õppeaasta ${studyYear.nameEt}, õpetajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} õpilast.`;
           if (confirm(confirmText)) {
-            let newModuleResponse = await fetch('https://tahvel.edu.ee/hois_back/moduleProtocols', {
+            let newModuleResponse = await fetch(`${TAHVEL_API_URL}/moduleProtocols`, {
               credentials: 'include',
               headers: {
                 'Accept': 'application/json, text/plain, */*',
@@ -936,7 +939,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
     });
 
     // Query journals
-    let journalsResponse = await fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+    let journalsResponse = await fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
       headers: { accept: 'application/json' },
     });
     let vocationalConnectedEntities = await journalsResponse.json();
@@ -1165,7 +1168,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
 
     // Query this week timetable
     fetch(
-      `https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
+      `${TAHVEL_API_URL}/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
       { headers: { accept: 'application/json' } }
     )
       .then(r => r.json())
@@ -1221,84 +1224,95 @@ if (typeof GM_log === 'function') console.log = GM_log;
   function injectSeatInfoToColumn(roomData) {
       const table = document.querySelector("table.md-table");
       const firstRow = table?.querySelector("tbody tr");
+      const headerRow = table?.querySelector("thead tr");
 
-      if (!table || !firstRow || isAlreadyApplied(table)) return;
+      if (!table || !firstRow) return;
 
-      const headerCells = table.querySelectorAll("thead th");
-      const headers = Array.from(headerCells).map(th =>
-                                                  th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
-                                                  );
+      // Check if headers need to be injected
+      if (!isAlreadyApplied(headerRow)) {
+          // Lisa uus päise veerg: Arvuteid (positsioon 3)
+          const computersHeader = document.createElement("th");
+          computersHeader.textContent = "Arvuteid";
+          headerRow.insertBefore(computersHeader, headerRow.children[3]);
+          cloneCellStyle(headerRow.children[2], computersHeader);
 
-      const roomColIndex = headers.findIndex(text => text === "ruum");
-      const seatsColIndex = headers.findIndex(text => text === "kohtadearv");
+          // Lisa uus päise veerg: Pindala (positsioon 4)
+          const areaHeader = document.createElement("th");
+          areaHeader.textContent = "Pindala";
+          headerRow.insertBefore(areaHeader, headerRow.children[4]);
+          cloneCellStyle(headerRow.children[2], areaHeader);
 
-      if (roomColIndex === -1 || seatsColIndex === -1) return;
+          // Lisa uus päise veerg: Tahvel (positsioon 5)
+          const boardHeader = document.createElement("th");
+          boardHeader.textContent = "Tahvel";
+          headerRow.insertBefore(boardHeader, headerRow.children[5]);
+          cloneCellStyle(headerRow.children[2], boardHeader);
 
-      const headerRow = table.querySelector("thead tr");
+          // Lisa uus päise veerg: OS (positsioon 6)
+          const osHeader = document.createElement("th");
+          osHeader.textContent = "OS";
+          headerRow.insertBefore(osHeader, headerRow.children[6]);
+          cloneCellStyle(headerRow.children[2], osHeader);
 
-      // Lisa uus päise veerg: Arvuteid (positsioon 3)
-      const computersHeader = document.createElement("th");
-      computersHeader.textContent = "Arvuteid";
-      headerRow.insertBefore(computersHeader, headerRow.children[3]);
-      cloneCellStyle(headerRow.children[2], computersHeader);
+          addAppliedMarker(headerRow);
+      }
 
-      // Lisa uus päise veerg: Pindala (positsioon 4)
-      const areaHeader = document.createElement("th");
-      areaHeader.textContent = "Pindala";
-      headerRow.insertBefore(areaHeader, headerRow.children[4]);
-      cloneCellStyle(headerRow.children[2], areaHeader);
+      // Check if data needs to be processed (check first row for content changes)
+      if (!isAlreadyApplied(firstRow)) {
+          const rows = table.querySelectorAll("tbody tr");
+          console.log("Injecting seat info into room table");
 
-      // Lisa uus päise veerg: Arvuteid (positsioon 5)
-      const boardHeader = document.createElement("th");
-      boardHeader.textContent = "Tahvel";
-      headerRow.insertBefore(boardHeader, headerRow.children[5]);
-      cloneCellStyle(headerRow.children[2], boardHeader);
+          // Adjust index if already applied, 4 new columns added
+          const headerCells = table.querySelectorAll("thead th");
+          const headers = Array.from(headerCells).map(th =>
+            th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
+          );
 
-      // Lisa uus päise veerg: Pindala (positsioon 6)
-      const osHeader = document.createElement("th");
-      osHeader.textContent = "OS";
-      headerRow.insertBefore(osHeader, headerRow.children[6]);
-      cloneCellStyle(headerRow.children[2], osHeader);
+          const roomColIndex = headers.findIndex(text => text === "ruum");
+          const numberOfNewColumnsBeforeSeatsCol = 4;
+          const seatsColIndex = headers.findIndex(text => text === "kohtadearv") - numberOfNewColumnsBeforeSeatsCol;
+          console.log("roomColIndex:", roomColIndex, "seatsColIndex:", seatsColIndex);
+          
+          rows.forEach(row => {
+              const cells = row.querySelectorAll("td");
+              const roomCell = cells[roomColIndex];
+              const roomText = roomCell?.textContent.trim() ?? "";
 
-      const rows = table.querySelectorAll("tbody tr");
-      rows.forEach(row => {
-          const cells = row.querySelectorAll("td");
-          const roomCell = cells[roomColIndex];
-          const roomText = roomCell?.textContent.trim() ?? "";
+              const match = roomData.find(r => r.roomNumber === roomText);
 
-          const match = roomData.find(r => r.roomNumber === roomText);
+              // Täida kohtade arv, kui match leitud
+              if (match && cells[seatsColIndex] && seatsColIndex !== -1) {
+                  cells[seatsColIndex].textContent = `${match.seats}`;
+              }
 
-          // Täida kohtade arv, kui match leitud
-          if (match && cells[seatsColIndex]) {
-              cells[seatsColIndex].textContent = `${match.seats}`;
-          }
+              // Lisa uus lahter: arvutite arv
+              const computersCell = document.createElement("td");
+              computersCell.textContent = match?.computers ?? "";
+              row.insertBefore(computersCell, row.children[3]);
+              cloneCellStyle(row.children[2], computersCell);
 
-          // Lisa uus lahter: arvutite arv
-          const computersCell = document.createElement("td");
-          computersCell.textContent = match?.computers ?? "";
-          row.insertBefore(computersCell, row.children[3]);
-          cloneCellStyle(row.children[2], computersCell);
+              // Lisa uus lahter: pindala
+              const areaCell = document.createElement("td");
+              areaCell.textContent = match?.area ? `${match.area}m²` : "";
+              row.insertBefore(areaCell, row.children[4]);
+              cloneCellStyle(row.children[2], areaCell);
 
-          // Lisa uus lahter: pindala
-          const areaCell = document.createElement("td");
-          areaCell.textContent = match?.area ? `${match.area}m²` : "";
-          row.insertBefore(areaCell, row.children[4]);
-          cloneCellStyle(row.children[2], areaCell);
+              // Lisa uus lahter: tahvel
+              const boardCell = document.createElement("td");
+              boardCell.textContent = match?.board ?? "";
+              row.insertBefore(boardCell, row.children[5]);
+              cloneCellStyle(row.children[2], boardCell);
 
-          // Lisa uus lahter: tahvel
-          const boardCell = document.createElement("td");
-          boardCell.textContent = match?.board ?? "";
-          row.insertBefore(boardCell, row.children[5]);
-          cloneCellStyle(row.children[2], boardCell);
+              // Lisa uus lahter: os
+              const osCell = document.createElement("td");
+              osCell.textContent = match?.os ?? "";
+              row.insertBefore(osCell, row.children[6]);
+              cloneCellStyle(row.children[2], osCell);
+          });
 
-          // Lisa uus lahter: os
-          const osCell = document.createElement("td");
-          osCell.textContent = match?.os ?? "";
-          row.insertBefore(osCell, row.children[6]);
-          cloneCellStyle(row.children[2], osCell);
-      });
-
-      addAppliedMarker(table);
+          // Mark first row as processed to detect content changes
+          addAppliedMarker(firstRow);
+      }
   }
   //#endregion
 
