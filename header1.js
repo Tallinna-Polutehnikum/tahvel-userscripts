@@ -3,7 +3,7 @@
 // @namespace    https://tahvel.edu.ee/
 // @version      ${version}
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
-// @author       Timo Triisa
+// @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
 // @match        https://tahveltp.edu.ee/*
 // @updateURL    https://bit.ly/tahvel-userscript

@@ -204,8 +204,9 @@ function processData(data) {
       goodGrades: [],
       greatGrades: [],
       gradeTotal: [],
+      negativeGradesMetric: [],
     },
-    absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [] },
+    absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] },
   };
 
   data.grades.forEach(e => {
@@ -218,6 +219,10 @@ function processData(data) {
     processedData.grades.greatGrades.push(e.greatGrades);
 
     processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
+
+    processedData.grades.negativeGradesMetric.push(
+      ((+e.negativeGrades * 100) / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
+    );
   });
 
   data.absences.forEach(e => {
@@ -225,7 +230,8 @@ function processData(data) {
     processedData.absences.noReason.push(e.noReason);
     processedData.absences.withReason.push(e.withReason);
     processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
-    processedData.absences.lessons.push(((+e.noReason + +e.withReason) * 100) / +e.metric); // Calculate lessons using all absences and absence percentage
+    processedData.absences.lessons.push(((+e.noReason + +e.withReason) * 100) / +e.metric).toFixed(0); // Calculate lessons using all absences and absence percentage
+    processedData.absences.metrics.push(e.metric);
   });
 
   return processedData;
@@ -344,9 +350,13 @@ function graphData(data, graphType) {
 
 function createGraphElements(previousElement) {
   // Create grade history container
-  const gradeHistory = document.createElement('div');
+  const gradeHistory = document.createElement('fieldset');
   gradeHistory.id = 'gradeHistoryContainer';
   gradeHistory.className = 'chart-container';
+
+  const gradeHistoryLegend = document.createElement('legend');
+  gradeHistoryLegend.textContent = 'Ajalugu';
+  gradeHistory.appendChild(gradeHistoryLegend);
 
   // Create login container
   const loginOverlay = document.createElement('div');
@@ -370,16 +380,17 @@ function createGraphElements(previousElement) {
   const graphDataBtn = document.createElement('a');
   graphDataBtn.id = 'graphDataBtn';
   graphDataBtn.className = 'md-raised md-primary md-button md-ink-ripple';
-  graphDataBtn.text = 'Hinnete vaade';
+  graphDataBtn.text = 'Puudumiste vaade';
   const graphModeBtn = document.createElement('a');
   graphModeBtn.id = 'graphModeBtn';
   graphModeBtn.className = 'md-raised md-secondary md-button md-ink-ripple';
-  graphModeBtn.text = 'Lihtne vaade';
+  graphModeBtn.text = 'Täiustatud vaade';
 
   graphDataBtn.addEventListener('click', () => {
     graphType = graphType === 'grades' ? 'absences' : 'grades';
     graphDataBtn.text = graphDataBtn.text === 'Hinnete vaade' ? 'Puudumiste vaade' : 'Hinnete vaade';
-    document.querySelector('#graphModeBtn').style.display = graphDataBtn.text === 'Hinnete vaade' ? 'inline-block' : 'none';
+    document.querySelector('#graphModeBtn').style.display =
+      graphDataBtn.text === 'Puudumiste vaade' ? 'inline-block' : 'none';
     createGradeHistory();
   });
   graphModeBtn.addEventListener('click', () => {
@@ -457,7 +468,31 @@ function initChart(graph, data) {
       data: graphData(processedData, graphType),
       options: {
         plugins: {
-          tooltip: { mode: 'index', intersect: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+              label: function (context) {
+                let label = context.dataset.label || '';
+
+                if (label && label === 'puudumisi kokku') {
+                  return label + ': ' + context.parsed.y + ' | ' + processedData.absences.metrics[context.dataIndex] + '%';
+                }
+                if (label && label === 'negatiivseid hindeid') {
+                  return (
+                    label +
+                    ': ' +
+                    context.parsed.y +
+                    ' | ' +
+                    processedData.grades.negativeGradesMetric[context.dataIndex] +
+                    '%'
+                  );
+                }
+
+                return label + ': ' + context.parsed.y;
+              },
+            },
+          },
           legend: {
             labels: { filter: legendItem => legendItem.text !== 'hindeid kokku' && legendItem.text !== 'puudumisi kokku' },
           },

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.3.3
+// @version      1.4.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
-// @author       Timo Triisa
+// @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
 // @match        https://tahveltp.edu.ee/*
 // @updateURL    https://bit.ly/tahvel-userscript
@@ -23,7 +23,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.3.3";
+  var version = "1.4.0";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -1410,9 +1410,10 @@
         fineGrades: [],
         goodGrades: [],
         greatGrades: [],
-        gradeTotal: []
+        gradeTotal: [],
+        negativeGradesMetric: []
       },
-      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [] }
+      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] }
     };
     data.grades.forEach((e) => {
       processedData.grades.dates.push(e.date);
@@ -1422,13 +1423,17 @@
       processedData.grades.goodGrades.push(e.goodGrades);
       processedData.grades.greatGrades.push(e.greatGrades);
       processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
+      processedData.grades.negativeGradesMetric.push(
+        (+e.negativeGrades * 100 / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
+      );
     });
     data.absences.forEach((e) => {
       processedData.absences.dates.push(e.date);
       processedData.absences.noReason.push(e.noReason);
       processedData.absences.withReason.push(e.withReason);
       processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
-      processedData.absences.lessons.push((+e.noReason + +e.withReason) * 100 / +e.metric);
+      processedData.absences.lessons.push((+e.noReason + +e.withReason) * 100 / +e.metric).toFixed(0);
+      processedData.absences.metrics.push(e.metric);
     });
     return processedData;
   }
@@ -1541,9 +1546,12 @@
     }
   }
   function createGraphElements(previousElement) {
-    const gradeHistory = document.createElement("div");
+    const gradeHistory = document.createElement("fieldset");
     gradeHistory.id = "gradeHistoryContainer";
     gradeHistory.className = "chart-container";
+    const gradeHistoryLegend = document.createElement("legend");
+    gradeHistoryLegend.textContent = "Ajalugu";
+    gradeHistory.appendChild(gradeHistoryLegend);
     const loginOverlay = document.createElement("div");
     loginOverlay.id = "loginOverlay";
     loginOverlay.className = "login-overlay";
@@ -1559,15 +1567,15 @@
     const graphDataBtn = document.createElement("a");
     graphDataBtn.id = "graphDataBtn";
     graphDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
-    graphDataBtn.text = "Hinnete vaade";
+    graphDataBtn.text = "Puudumiste vaade";
     const graphModeBtn = document.createElement("a");
     graphModeBtn.id = "graphModeBtn";
     graphModeBtn.className = "md-raised md-secondary md-button md-ink-ripple";
-    graphModeBtn.text = "Lihtne vaade";
+    graphModeBtn.text = "T\xE4iustatud vaade";
     graphDataBtn.addEventListener("click", () => {
       graphType = graphType === "grades" ? "absences" : "grades";
       graphDataBtn.text = graphDataBtn.text === "Hinnete vaade" ? "Puudumiste vaade" : "Hinnete vaade";
-      document.querySelector("#graphModeBtn").style.display = graphDataBtn.text === "Hinnete vaade" ? "inline-block" : "none";
+      document.querySelector("#graphModeBtn").style.display = graphDataBtn.text === "Puudumiste vaade" ? "inline-block" : "none";
       createGradeHistory();
     });
     graphModeBtn.addEventListener("click", () => {
@@ -1622,7 +1630,22 @@
         data: graphData(processedData, graphType),
         options: {
           plugins: {
-            tooltip: { mode: "index", intersect: false },
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  let label = context.dataset.label || "";
+                  if (label && label === "puudumisi kokku") {
+                    return label + ": " + context.parsed.y + " | " + processedData.absences.metrics[context.dataIndex] + "%";
+                  }
+                  if (label && label === "negatiivseid hindeid") {
+                    return label + ": " + context.parsed.y + " | " + processedData.grades.negativeGradesMetric[context.dataIndex] + "%";
+                  }
+                  return label + ": " + context.parsed.y;
+                }
+              }
+            },
             legend: {
               labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" }
             }
