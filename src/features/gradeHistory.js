@@ -462,7 +462,7 @@ function initChart(graph, data) {
             labels: { filter: legendItem => legendItem.text !== 'hindeid kokku' && legendItem.text !== 'puudumisi kokku' },
           },
         },
-        scales: { y: { stacked: true } },
+        scales: { y: { stacked: true, beginAtZero: true } },
       },
     });
 

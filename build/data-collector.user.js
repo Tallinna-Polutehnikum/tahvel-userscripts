@@ -18,7 +18,6 @@
       credentials: "include",
       headers: { accept: "application/json, text/plain, */*" }
     });
-    console.log("session extended at: " + /* @__PURE__ */ new Date());
   }, 12e4);
 
   // env-ns:env

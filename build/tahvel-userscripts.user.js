@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.3.1
+// @version      1.3.2
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa
 // @match        https://tahvel.edu.ee/*
-// @updateURL    https://bit.ly/tahvel-userscript
-// @downloadURL  https://bit.ly/tahvel-userscript
+// @match        https://tahveltp.edu.ee/*
+// @updateURL    https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
+// @downloadURL  https://raw.githubusercontent.com/Tallinna-Polutehnikum/tahvel-userscripts/main/build/tahvel-userscripts.user.js
 // @grant        GM_log
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
@@ -19,11 +20,10 @@
       credentials: "include",
       headers: { accept: "application/json, text/plain, */*" }
     });
-    console.log("session extended at: " + /* @__PURE__ */ new Date());
   }, 12e4);
 
   // src/version.js
-  var version = "1.3.0";
+  var version = "1.3.2";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -46,11 +46,94 @@
     }
   }, 0);
 
+  // src/datasets/RoomDetails.js
+  var RoomDetails = [
+    { roomNumber: "A101", seats: "35", computers: "1", area: "36", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A102", seats: "16", computers: "9", area: "58", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A107", seats: "20", computers: "21", area: "72", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A108", seats: "30", computers: "31", area: "66", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A111", seats: "20", computers: "1", area: "36", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A116", seats: "30", computers: "1", area: "38", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A117", seats: "18", computers: "", area: "52", board: "", os: "Windows" },
+    { roomNumber: "A118", seats: "20", computers: "", area: "58", board: "puudub", os: "Windows" },
+    { roomNumber: "A201", seats: "34", computers: "1", area: "46", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A202", seats: "50", computers: "1", area: "76", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A209", seats: "30", computers: "1", area: "45", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A210", seats: "24", computers: "23", area: "43", board: "", os: "Windows" },
+    { roomNumber: "A213", seats: "16", computers: "", area: "48", board: "puudub", os: "" },
+    { roomNumber: "A216", seats: "30", computers: "1", area: "38", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A217", seats: "34", computers: "1", area: "52", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A301", seats: "34", computers: "1", area: "46", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A302", seats: "34", computers: "35", area: "75", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A303", seats: "15", computers: "", area: "??", board: "", os: "" },
+    { roomNumber: "A304", seats: "38", computers: "1", area: "54", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A306", seats: "35", computers: "1", area: "56", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A307", seats: "16", computers: "17", area: "55", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A308", seats: "32", computers: "33", area: "53", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A309", seats: "15", computers: "18", area: "51", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A310", seats: "36", computers: "1", area: "45", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A311", seats: "34", computers: "1", area: "36", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A314", seats: "30", computers: "1", area: "38", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A315", seats: "36", computers: "1", area: "52", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A401", seats: "30", computers: "1", area: "46", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A402", seats: "30", computers: "31", area: "78", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A404", seats: "36", computers: "1", area: "55", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "A403", seats: "15", computers: "", area: "??", board: "", os: "" },
+    { roomNumber: "A405", seats: "26", computers: "1", area: "45", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A406", seats: "34", computers: "1", area: "42", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A407", seats: "140", computers: "1", area: "163", board: "", os: "Windows" },
+    { roomNumber: "A410", seats: "34", computers: "1", area: "57", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A414", seats: "16", computers: "1", area: "38", board: "", os: "Windows" },
+    { roomNumber: "A415", seats: "36", computers: "1", area: "52", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "A002", seats: "30", computers: "58", area: "139", board: "", os: "Windows" },
+    { roomNumber: "A003", seats: "9", computers: "1", area: "30", board: "", os: "Windows" },
+    { roomNumber: "A007a007b", seats: "7", computers: "", area: "20", board: "", os: "" },
+    { roomNumber: "A008", seats: "20", computers: "1", area: "95", board: "", os: "Windows" },
+    { roomNumber: "A008a", seats: "0", computers: "", area: "20", board: "", os: "" },
+    { roomNumber: "A009", seats: "8", computers: "2", area: "37", board: "", os: "OS X" },
+    { roomNumber: "A010", seats: "6", computers: "1", area: "47", board: "", os: "Windows" },
+    { roomNumber: "B036038", seats: "0", computers: "", area: "78", board: "", os: "" },
+    { roomNumber: "B046", seats: "30", computers: "20", area: "104", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B047", seats: "0", computers: "1", area: "36", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B100", seats: "36", computers: "", area: "369", board: "", os: "" },
+    { roomNumber: "T411", seats: "30", computers: "31", area: "52", board: "puudub", os: "Windows" },
+    { roomNumber: "T412", seats: "31", computers: "31", area: "65", board: "puudub", os: "Windows" },
+    { roomNumber: "T413", seats: "0", computers: "", area: "100", board: "", os: "" },
+    { roomNumber: "B113", seats: "40", computers: "16", area: "110", board: "", os: "Windows" },
+    { roomNumber: "B116", seats: "2", computers: "", area: "", board: "", os: "" },
+    { roomNumber: "B200", seats: "4", computers: "1", area: "46", board: "", os: "OS X" },
+    { roomNumber: "B201", seats: "24", computers: "", area: "76", board: "", os: "OS X" },
+    { roomNumber: "B202", seats: "7", computers: "", area: "37", board: "", os: "" },
+    { roomNumber: "B204", seats: "4", computers: "", area: "37", board: "", os: "" },
+    { roomNumber: "B206", seats: "20", computers: "21", area: "37", board: "valgetahvel", os: "OS X" },
+    { roomNumber: "B207", seats: "8", computers: "", area: "37", board: "", os: "" },
+    { roomNumber: "B210", seats: "12", computers: "12", area: "38", board: "valgetahvel", os: "OS X" },
+    { roomNumber: "B211", seats: "32", computers: "1", area: "55", board: "valgetahvel", os: "OS X" },
+    { roomNumber: "B306", seats: "25", computers: "27", area: "55", board: "valgetahvel", os: "OS X" },
+    { roomNumber: "B307", seats: "31", computers: "31", area: "56", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B315", seats: "20", computers: "21", area: "57", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B316", seats: "16", computers: "17", area: "57", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B317", seats: "10", computers: "", area: "38", board: "", os: "" },
+    { roomNumber: "B318", seats: "18", computers: "19", area: "57", board: "valgetahvel", os: "Windows" },
+    { roomNumber: "B405", seats: "32", computers: "1", area: "55", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B407", seats: "32", computers: "", area: "56", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B409", seats: "28", computers: "1", area: "56", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B414", seats: "18", computers: "1", area: "38", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B416", seats: "28", computers: "1", area: "57", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B417", seats: "36", computers: "1", area: "57", board: "kriiditahvel", os: "Windows" },
+    { roomNumber: "B508", seats: "8", computers: "4", area: "24", board: "", os: "OS X" },
+    { roomNumber: "B510", seats: "16", computers: "16", area: "48", board: "", os: "OS X" },
+    { roomNumber: "B511", seats: "8", computers: "8", area: "24", board: "", os: "OS X" },
+    { roomNumber: "B512", seats: "8", computers: "8", area: "24", board: "", os: "OS X" },
+    { roomNumber: "B513", seats: "8", computers: "", area: "25", board: "", os: "" }
+  ];
+
   // src/features/teachers.js
   if (typeof GM_log === "function") console.log = GM_log;
   (function() {
     "use strict";
     console.log("Tahvel Customization script started");
+    const TAHVEL_API_URL = window.location.origin + "/hois_back";
     let oppetoetus = false;
     const style = document.createElement("style");
     style.textContent = `
@@ -168,6 +251,11 @@
           myJournals = addMyJournals();
           if (myJournals) addAppliedMarker(myJournals);
         }
+      }
+      if (location.hash.startsWith("#/lessonplans/rooms")) {
+        observeTargetChange(document.body, () => {
+          injectSeatInfoToColumn(RoomDetails);
+        });
       }
     });
     function observeTargetChange(targetNode, callback) {
@@ -381,49 +469,43 @@
       }
       let tableBody = table?.querySelector("tbody");
       let headerRow = table.querySelector("thead tr");
-      let response1 = await fetch(
-        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`,
-        {
-          headers: {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "en-US,en;q=0.9",
-            "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "x-requested-with": "XMLHttpRequest"
-          },
-          referrer: "https://tahvel.edu.ee/",
-          referrerPolicy: "strict-origin-when-cross-origin",
-          body: null,
-          method: "GET",
-          mode: "cors",
-          credentials: "include"
-        }
-      );
+      let response1 = await fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
+        headers: {
+          "accept": "application/json, text/plain, */*",
+          "accept-language": "en-US,en;q=0.9",
+          "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": '"Windows"',
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+          "x-requested-with": "XMLHttpRequest"
+        },
+        referrer: `${window.location.origin}/`,
+        referrerPolicy: "strict-origin-when-cross-origin",
+        body: null,
+        method: "GET",
+        mode: "cors",
+        credentials: "include"
+      });
       let dataEntries = await response1.json();
-      let response2 = await fetch(
-        `https://tahvel.edu.ee/hois_back/journals/${journalId}/journalEntriesByDate?allStudents=false`,
-        {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.5",
-            "X-Requested-With": "XMLHttpRequest",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "Pragma": "no-cache",
-            "Cache-Control": "no-cache"
-          },
-          referrer: "https://tahvel.edu.ee/",
-          method: "GET",
-          mode: "cors",
-          credentials: "include"
-        }
-      );
+      let response2 = await fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.5",
+          "X-Requested-With": "XMLHttpRequest",
+          "Sec-Fetch-Dest": "empty",
+          "Sec-Fetch-Mode": "cors",
+          "Sec-Fetch-Site": "same-origin",
+          "Pragma": "no-cache",
+          "Cache-Control": "no-cache"
+        },
+        referrer: `${window.location.origin}/`,
+        method: "GET",
+        mode: "cors",
+        credentials: "include"
+      });
       let journalEntries = await response2.json();
       let domIndex = 0;
       let skipHeaders = ["Nr", "\xD5ppija, \xD5pper\xFChm", "Keskm.", "Summa"];
@@ -564,6 +646,7 @@
     function negativeResultsToolsInStudentProfile(table, studentId) {
       const tableHeaders = table.querySelectorAll("thead th");
       const tableRows = table.querySelectorAll("tbody tr");
+      let totalGrades = 0;
       let negativeGrades = 0;
       tableRows.forEach((row) => {
         let type = row.querySelector("td:nth-child(2)").textContent.trim();
@@ -571,9 +654,13 @@
         if (["MA", "X", "1", "2"].includes(grade) && type === "L\xF5pptulemus") {
           negativeGrades++;
         }
+        if (["MA", "X", "1", "2", "3", "4", "5", "A"].includes(grade) && type === "L\xF5pptulemus") {
+          totalGrades++;
+        }
       });
       let negativeGradesCounter = document.createElement("span");
-      negativeGradesCounter.textContent = `Negatiivseid l\xF5pptulemusi: ${negativeGrades}`;
+      let negativeGradesPercentage = totalGrades > 0 ? negativeGrades / totalGrades * 100 : 0;
+      negativeGradesCounter.textContent = `Negatiivseid l\xF5pptulemusi: ${negativeGrades} (~${negativeGradesPercentage.toFixed(0)}%)`;
       let onlyNegativeGradesToggle = document.createElement("button");
       onlyNegativeGradesToggle.textContent = "N\xE4ita neg. hindeid";
       onlyNegativeGradesToggle.classList.add("md-button", "md-raised");
@@ -584,9 +671,6 @@
         onlyNegativeGradesToggle.dataset.active = !active;
         onlyNegativeGradesToggle.textContent = active ? "N\xE4ita neg. hindeid" : "N\xE4ita k\xF5iki hindeid";
         if (active) {
-          (function() {
-            "use strict";
-          })();
           tableRows.forEach((row) => {
             row.style.display = "";
           });
@@ -631,7 +715,7 @@
       journalLinkToggle.classList.add("md-button", "md-raised");
       journalLinkToggle.style.marginRight = "10px";
       journalLinkToggle.addEventListener("click", () => {
-        fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+        fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
           headers: { accept: "application/json" }
         }).then((r) => r.json()).then((data) => {
           tableRows.forEach((row) => {
@@ -663,7 +747,7 @@
       );
       const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
       let moduleProtocolsResponse = await fetch(
-        `https://tahvel.edu.ee/hois_back/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
+        `${TAHVEL_API_URL}/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
         { headers: { accept: "application/json" } }
       );
       let moduleProtocols = await moduleProtocolsResponse.json();
@@ -689,14 +773,14 @@
             newModuleLink.style.pointerEvents = "none";
             newModuleLink.style.color = "gray";
             newModuleLink.textContent = "Laeb...";
-            let studyYearResponse = await fetch("https://tahvel.edu.ee/hois_back/school/studyYear/current-or-next-dto", {
+            let studyYearResponse = await fetch(`${TAHVEL_API_URL}/school/studyYear/current-or-next-dto`, {
               credentials: "include",
               headers: { Accept: "application/json, text/plain, */*" },
               method: "GET"
             });
             let studyYear = await studyYearResponse.json();
-            let studentsResponse = await await fetch(
-              `https://tahvel.edu.ee/hois_back/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
+            let studentsResponse = await fetch(
+              `${TAHVEL_API_URL}/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
               { credentials: "include", headers: { Accept: "application/json, text/plain, */*" }, method: "GET" }
             );
             let students = await studentsResponse.json();
@@ -714,7 +798,7 @@
             }
             let confirmText = `Oled loomas uut protokolli moodulile ${moduleName2}. Moodulile m\xE4\xE4ratakse \xF5ppeaasta ${studyYear.nameEt}, \xF5petajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} \xF5pilast.`;
             if (confirm(confirmText)) {
-              let newModuleResponse = await fetch("https://tahvel.edu.ee/hois_back/moduleProtocols", {
+              let newModuleResponse = await fetch(`${TAHVEL_API_URL}/moduleProtocols`, {
                 credentials: "include",
                 headers: {
                   "Accept": "application/json, text/plain, */*",
@@ -754,7 +838,7 @@
           moduleDom.appendChild(newModuleLink);
         }
       });
-      let journalsResponse = await fetch(`https://tahvel.edu.ee/hois_back/students/${studentId}/vocationalConnectedEntities`, {
+      let journalsResponse = await fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
         headers: { accept: "application/json" }
       });
       let vocationalConnectedEntities = await journalsResponse.json();
@@ -913,7 +997,7 @@
       let monday = new Date(today.setDate(diff)).toISOString().split("T")[0] + "T00:00:00Z";
       let sunday = new Date(today.setDate(diff + 6)).toISOString().split("T")[0] + "T00:00:00Z";
       fetch(
-        `https://tahvel.edu.ee/hois_back/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
+        `${TAHVEL_API_URL}/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
         { headers: { accept: "application/json" } }
       ).then((r) => r.json()).then((timetable) => {
         let alreadyAdded = [];
@@ -941,6 +1025,80 @@
       });
       mainContent.firstChild.after(myJournals);
       return myJournals;
+    }
+    function cloneCellStyle(fromEl, toEl) {
+      const computedStyle = window.getComputedStyle(fromEl);
+      toEl.style.padding = computedStyle.padding;
+      toEl.style.font = computedStyle.font;
+      toEl.style.verticalAlign = computedStyle.verticalAlign;
+      toEl.style.lineHeight = computedStyle.lineHeight;
+      toEl.style.height = computedStyle.height;
+      toEl.style.borderTop = computedStyle.borderTop;
+      toEl.style.borderBottom = computedStyle.borderBottom;
+      toEl.style.textAlign = computedStyle.textAlign;
+    }
+    function injectSeatInfoToColumn(roomData) {
+      const table = document.querySelector("table.md-table");
+      const firstRow = table?.querySelector("tbody tr");
+      const headerRow = table?.querySelector("thead tr");
+      if (!table || !firstRow) return;
+      if (!isAlreadyApplied(headerRow)) {
+        const computersHeader = document.createElement("th");
+        computersHeader.textContent = "Arvuteid";
+        headerRow.insertBefore(computersHeader, headerRow.children[3]);
+        cloneCellStyle(headerRow.children[2], computersHeader);
+        const areaHeader = document.createElement("th");
+        areaHeader.textContent = "Pindala";
+        headerRow.insertBefore(areaHeader, headerRow.children[4]);
+        cloneCellStyle(headerRow.children[2], areaHeader);
+        const boardHeader = document.createElement("th");
+        boardHeader.textContent = "Tahvel";
+        headerRow.insertBefore(boardHeader, headerRow.children[5]);
+        cloneCellStyle(headerRow.children[2], boardHeader);
+        const osHeader = document.createElement("th");
+        osHeader.textContent = "OS";
+        headerRow.insertBefore(osHeader, headerRow.children[6]);
+        cloneCellStyle(headerRow.children[2], osHeader);
+        addAppliedMarker(headerRow);
+      }
+      if (!isAlreadyApplied(firstRow)) {
+        const rows = table.querySelectorAll("tbody tr");
+        console.log("Injecting seat info into room table");
+        const headerCells = table.querySelectorAll("thead th");
+        const headers = Array.from(headerCells).map(
+          (th) => th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
+        );
+        const roomColIndex = headers.findIndex((text) => text === "ruum");
+        const numberOfNewColumnsBeforeSeatsCol = 4;
+        const seatsColIndex = headers.findIndex((text) => text === "kohtadearv") - numberOfNewColumnsBeforeSeatsCol;
+        console.log("roomColIndex:", roomColIndex, "seatsColIndex:", seatsColIndex);
+        rows.forEach((row) => {
+          const cells = row.querySelectorAll("td");
+          const roomCell = cells[roomColIndex];
+          const roomText = roomCell?.textContent.trim() ?? "";
+          const match = roomData.find((r) => r.roomNumber === roomText);
+          if (match && cells[seatsColIndex] && seatsColIndex !== -1) {
+            cells[seatsColIndex].textContent = `${match.seats}`;
+          }
+          const computersCell = document.createElement("td");
+          computersCell.textContent = match?.computers ?? "";
+          row.insertBefore(computersCell, row.children[3]);
+          cloneCellStyle(row.children[2], computersCell);
+          const areaCell = document.createElement("td");
+          areaCell.textContent = match?.area ? `${match.area}m\xB2` : "";
+          row.insertBefore(areaCell, row.children[4]);
+          cloneCellStyle(row.children[2], areaCell);
+          const boardCell = document.createElement("td");
+          boardCell.textContent = match?.board ?? "";
+          row.insertBefore(boardCell, row.children[5]);
+          cloneCellStyle(row.children[2], boardCell);
+          const osCell = document.createElement("td");
+          osCell.textContent = match?.os ?? "";
+          row.insertBefore(osCell, row.children[6]);
+          cloneCellStyle(row.children[2], osCell);
+        });
+        addAppliedMarker(firstRow);
+      }
     }
     let xhrInterceptors = [];
     function addXHRInterceptor(filterFn, callback) {
@@ -1154,30 +1312,30 @@
     height: 200px;
     text-align: center;
   }
-.spinner {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 1;
-  width: 120px;
-  height: 120px;
-  margin: -76px 0 0 -76px;
-  border: 16px solid #f3f3f3;
-  border-radius: 50%;
-  border-top: 16px solid #3498db;
-  -webkit-animation: spin 2s linear infinite;
-  animation: spin 2s linear infinite;
-}
+  .spinner {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 1;
+    width: 120px;
+    height: 120px;
+    margin: -76px 0 0 -76px;
+    border: 16px solid #f3f3f3;
+    border-radius: 50%;
+    border-top: 16px solid #3498db;
+    -webkit-animation: spin 2s linear infinite;
+    animation: spin 2s linear infinite;
+  }
 
-@-webkit-keyframes spin {
-  0% { -webkit-transform: rotate(0deg); }
-  100% { -webkit-transform: rotate(360deg); }
-}
+  @-webkit-keyframes spin {
+    0% { -webkit-transform: rotate(0deg); }
+    100% { -webkit-transform: rotate(360deg); }
+  }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 `;
   document.head.appendChild(gradeHistoryStyle);
   var hash = window.location.hash;
@@ -1469,7 +1627,7 @@
               labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" }
             }
           },
-          scales: { y: { stacked: true } }
+          scales: { y: { stacked: true, beginAtZero: true } }
         }
       });
       return;
