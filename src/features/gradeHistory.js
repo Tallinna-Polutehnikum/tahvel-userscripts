@@ -230,7 +230,7 @@ function processData(data) {
     processedData.absences.noReason.push(e.noReason);
     processedData.absences.withReason.push(e.withReason);
     processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
-    processedData.absences.lessons.push(((+e.noReason + +e.withReason) * 100) / +e.metric).toFixed(0); // Calculate lessons using all absences and absence percentage
+    processedData.absences.lessons.push((((+e.noReason + +e.withReason) * 100) / +e.metric).toFixed(0)); // Calculate lessons using all absences and absence percentage
     processedData.absences.metrics.push(e.metric);
   });
 
