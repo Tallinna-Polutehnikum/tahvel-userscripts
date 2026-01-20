@@ -112,6 +112,7 @@ let hash = window.location.hash;
 
 let simpleMode = true;
 let graphType = 'grades';
+let lastState = 'grades';
 
 async function createGradeHistory() {
   if (hash.includes('/results') || hash.includes('/myResults')) {
@@ -162,13 +163,10 @@ gradeHistoryMain();
 const request = { scopes: ['openid', 'profile'] };
 
 function manageLogin(graph, loginOverlay) {
-  console.log('Managing login state...');
-
   const accounts = msalInstance.getAllAccounts();
 
   if (accounts.length === 0) {
     // No accounts found, show login overlay
-    console.log('No accounts found, showing login overlay.');
     loginOverlay.style.display = 'flex';
     return false;
   }
@@ -186,7 +184,6 @@ function manageLogin(graph, loginOverlay) {
       initChart(graph, await fetchGradeHistory());
     })
     .catch(error => {
-      console.log('Silent token acquisition failed, showing login overlay.');
       console.error(error);
       loginOverlay.style.display = 'flex';
     });
@@ -206,6 +203,16 @@ function processData(data) {
       gradeTotal: [],
       negativeGradesMetric: [],
     },
+    finalGrades: {
+      dates: [],
+      negativeFinalGrades: [],
+      positiveFinalGrades: [],
+      fineFinalGrades: [],
+      goodFinalGrades: [],
+      greatFinalGrades: [],
+      finalGradeTotal: [],
+      negativeFinalGradesMetric: [],
+    },
     absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] },
   };
 
@@ -222,6 +229,23 @@ function processData(data) {
 
     processedData.grades.negativeGradesMetric.push(
       ((+e.negativeGrades * 100) / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
+    );
+  });
+
+  data.finalGrades.forEach(e => {
+    processedData.finalGrades.dates.push(e.date);
+    processedData.finalGrades.negativeFinalGrades.push(e.negativeFinalGrades);
+    processedData.finalGrades.positiveFinalGrades.push(+e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades);
+
+    processedData.finalGrades.fineFinalGrades.push(e.fineFinalGrades);
+    processedData.finalGrades.goodFinalGrades.push(e.goodFinalGrades);
+    processedData.finalGrades.greatFinalGrades.push(e.greatFinalGrades);
+    processedData.finalGrades.finalGradeTotal.push(
+      +e.negativeFinalGrades + +e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades
+    );
+
+    processedData.finalGrades.negativeFinalGradesMetric.push(
+      ((+e.negativeFinalGrades * 100) / +processedData.finalGrades.finalGradeTotal.slice(-1)).toFixed(0)
     );
   });
 
@@ -298,6 +322,66 @@ function graphData(data, graphType) {
     },
   ];
 
+  let datasetFinalSimple = [
+    {
+      label: 'negatiivseid lõpphindeid',
+      data: data.finalGrades.negativeFinalGrades,
+      borderWidth: 2,
+      borderColor: '#eb3b5a',
+      backgroundColor: '#fc5c65',
+      fill: true,
+      stack: 'grades',
+    },
+    {
+      label: 'positiivseid lõpphindeid',
+      data: data.finalGrades.positiveFinalGrades,
+      borderWidth: 2,
+      borderColor: '#20bf6b',
+      backgroundColor: '#26de81',
+      fill: true,
+      stack: 'grades',
+    },
+  ];
+
+  let datasetFinalAdvanced = [
+    {
+      label: 'negatiivseid lõpphindeid',
+      data: data.finalGrades.negativeFinalGrades,
+      borderWidth: 2,
+      borderColor: '#eb3b5a',
+      backgroundColor: '#fc5c65',
+      fill: true,
+      stack: 'grades',
+    },
+    {
+      label: 'rahuldavaid hindeid',
+      data: data.finalGrades.fineFinalGrades,
+      borderWidth: 2,
+      borderColor: '#fa8231',
+      backgroundColor: '#fd9644',
+      fill: true,
+      stack: 'grades',
+    },
+    {
+      label: 'häid hindeid',
+      data: data.finalGrades.goodFinalGrades,
+      borderWidth: 2,
+      borderColor: '#f7b731',
+      backgroundColor: '#fed330',
+      fill: true,
+      stack: 'grades',
+    },
+    {
+      label: 'suurepäraseid hindeid',
+      data: data.finalGrades.greatFinalGrades,
+      borderWidth: 2,
+      borderColor: '#20bf6b',
+      backgroundColor: '#26de81',
+      fill: true,
+      stack: 'grades',
+    },
+  ];
+
   if (graphType == 'grades') {
     return {
       labels: data.grades.dates,
@@ -306,6 +390,14 @@ function graphData(data, graphType) {
         { label: 'hindeid kokku', data: data.grades.gradeTotal, borderColor: '#4b6584', backgroundColor: '#778ca3' },
       ],
     };
+  } else if (graphType == 'finalGrades') {
+    return {
+      labels: data.finalGrades.dates,
+      datasets: [
+        ...(simpleMode ? datasetFinalSimple : datasetFinalAdvanced),
+        { label: 'lõpphindeid kokku', data: data.finalGrades.finalGradeTotal, borderColor: '#4b6584', backgroundColor: '#778ca3' },
+      ],
+    }
   } else if (graphType == 'absences') {
     return {
       labels: data.absences.dates,
@@ -348,6 +440,42 @@ function graphData(data, graphType) {
   }
 }
 
+function graphControllsFunction(button) {
+  let tempLastState = '';
+
+  if (['graphDataBtn', 'graphFinalDataBtn'].includes(button)) {
+    tempLastState = graphType;
+  };
+
+  switch (button) {
+    case 'graphDataBtn':
+      console.log('last state:', lastState);
+      graphType = ['grades', 'finalGrades'].includes(graphType) ? 'absences' : lastState;
+      break;
+    case 'graphFinalDataBtn':
+      graphType = graphType === 'finalGrades' ? 'grades' : 'finalGrades';
+      break;
+    case 'graphModeBtn':
+      simpleMode = !simpleMode;
+      break;
+  }
+
+  lastState = tempLastState;
+
+  let graphDataBtn = document.querySelector('#graphDataBtn');
+  graphDataBtn.text = graphType === 'grades' || graphType === 'finalGrades' ? 'Puudumiste vaade' : 'Hinnete vaade';
+
+  let graphFinalDataBtn = document.querySelector('#graphFinalDataBtn');
+  graphFinalDataBtn.text = graphType === 'finalGrades' ? 'Hinnete vaade' : 'Lõpphindete vaade';
+  graphFinalDataBtn.style.display = graphType === 'absences' ? 'none' : 'inline-block';
+
+  let graphModeBtn = document.querySelector('#graphModeBtn');
+  graphModeBtn.text = simpleMode ? 'Täiustatud vaade' : 'Lihtne vaade';
+  graphModeBtn.style.display = graphType === 'absences' ? 'none' : 'inline-block';
+
+  createGradeHistory();
+};
+
 function createGraphElements(previousElement) {
   // Create grade history container
   const gradeHistory = document.createElement('fieldset');
@@ -381,26 +509,29 @@ function createGraphElements(previousElement) {
   graphDataBtn.id = 'graphDataBtn';
   graphDataBtn.className = 'md-raised md-primary md-button md-ink-ripple';
   graphDataBtn.text = 'Puudumiste vaade';
+
+  const graphFinalDataBtn = document.createElement('a');
+  graphFinalDataBtn.id = 'graphFinalDataBtn';
+  graphFinalDataBtn.className = 'md-raised md-primary md-button md-ink-ripple';
+  graphFinalDataBtn.text = 'Lõpphindete vaade';
+
   const graphModeBtn = document.createElement('a');
   graphModeBtn.id = 'graphModeBtn';
   graphModeBtn.className = 'md-raised md-secondary md-button md-ink-ripple';
   graphModeBtn.text = 'Täiustatud vaade';
 
   graphDataBtn.addEventListener('click', () => {
-    graphType = graphType === 'grades' ? 'absences' : 'grades';
-    graphDataBtn.text = graphDataBtn.text === 'Hinnete vaade' ? 'Puudumiste vaade' : 'Hinnete vaade';
-    document.querySelector('#graphModeBtn').style.display =
-      graphDataBtn.text === 'Puudumiste vaade' ? 'inline-block' : 'none';
-    createGradeHistory();
+    graphControllsFunction('graphDataBtn');
+  });
+  graphFinalDataBtn.addEventListener('click', () => {
+    graphControllsFunction('graphFinalDataBtn');
   });
   graphModeBtn.addEventListener('click', () => {
-    // Switch between simple mode true and false
-    simpleMode = !simpleMode;
-    graphModeBtn.text = graphModeBtn.text === 'Lihtne vaade' ? 'Täiustatud vaade' : 'Lihtne vaade';
-    createGradeHistory();
+    graphControllsFunction('graphModeBtn');
   });
 
   graphControlls.appendChild(graphDataBtn);
+  graphControlls.appendChild(graphFinalDataBtn);
   graphControlls.appendChild(graphModeBtn);
 
   // Create graph
@@ -488,13 +619,23 @@ function initChart(graph, data) {
                     '%'
                   );
                 }
+                if (label && label === 'negatiivseid lõpphindeid') {
+                  return (
+                    label +
+                    ': ' +
+                    context.parsed.y +
+                    ' | ' +
+                    processedData.finalGrades.negativeFinalGradesMetric[context.dataIndex] +
+                    '%'
+                  );
+                }
 
                 return label + ': ' + context.parsed.y;
               },
             },
           },
           legend: {
-            labels: { filter: legendItem => legendItem.text !== 'hindeid kokku' && legendItem.text !== 'puudumisi kokku' },
+            labels: { filter: legendItem => legendItem.text !== 'hindeid kokku' && legendItem.text !== 'puudumisi kokku' && legendItem.text !== 'lõpphindeid kokku' },
           },
         },
         scales: { y: { stacked: true, beginAtZero: true } },
@@ -513,7 +654,6 @@ async function fetchGradeHistory() {
   try {
     const studentId = await getStudentId();
 
-    console.log(studentData);
     // Check if we already have student data cached
     if (studentData && studentData[studentId]) {
       return studentData[studentId];

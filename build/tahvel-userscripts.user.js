@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.4.1
+// @version      1.5.0
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -23,7 +23,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.4.1";
+  var version = "1.5.0";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -1341,6 +1341,7 @@
   var hash = window.location.hash;
   var simpleMode = true;
   var graphType = "grades";
+  var lastState = "grades";
   async function createGradeHistory() {
     if (hash.includes("/results") || hash.includes("/myResults")) {
       const init = () => {
@@ -1382,10 +1383,8 @@
   gradeHistoryMain();
   var request = { scopes: ["openid", "profile"] };
   function manageLogin(graph, loginOverlay) {
-    console.log("Managing login state...");
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length === 0) {
-      console.log("No accounts found, showing login overlay.");
       loginOverlay.style.display = "flex";
       return false;
     }
@@ -1395,7 +1394,6 @@
       loginOverlay.style.display = "none";
       initChart(graph, await fetchGradeHistory());
     }).catch((error) => {
-      console.log("Silent token acquisition failed, showing login overlay.");
       console.error(error);
       loginOverlay.style.display = "flex";
     });
@@ -1413,6 +1411,16 @@
         gradeTotal: [],
         negativeGradesMetric: []
       },
+      finalGrades: {
+        dates: [],
+        negativeFinalGrades: [],
+        positiveFinalGrades: [],
+        fineFinalGrades: [],
+        goodFinalGrades: [],
+        greatFinalGrades: [],
+        finalGradeTotal: [],
+        negativeFinalGradesMetric: []
+      },
       absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] }
     };
     data.grades.forEach((e) => {
@@ -1425,6 +1433,20 @@
       processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
       processedData.grades.negativeGradesMetric.push(
         (+e.negativeGrades * 100 / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
+      );
+    });
+    data.finalGrades.forEach((e) => {
+      processedData.finalGrades.dates.push(e.date);
+      processedData.finalGrades.negativeFinalGrades.push(e.negativeFinalGrades);
+      processedData.finalGrades.positiveFinalGrades.push(+e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades);
+      processedData.finalGrades.fineFinalGrades.push(e.fineFinalGrades);
+      processedData.finalGrades.goodFinalGrades.push(e.goodFinalGrades);
+      processedData.finalGrades.greatFinalGrades.push(e.greatFinalGrades);
+      processedData.finalGrades.finalGradeTotal.push(
+        +e.negativeFinalGrades + +e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades
+      );
+      processedData.finalGrades.negativeFinalGradesMetric.push(
+        (+e.negativeFinalGrades * 100 / +processedData.finalGrades.finalGradeTotal.slice(-1)).toFixed(0)
       );
     });
     data.absences.forEach((e) => {
@@ -1496,12 +1518,78 @@
         stack: "grades"
       }
     ];
+    let datasetFinalSimple = [
+      {
+        label: "negatiivseid l\xF5pphindeid",
+        data: data.finalGrades.negativeFinalGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "positiivseid l\xF5pphindeid",
+        data: data.finalGrades.positiveFinalGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    let datasetFinalAdvanced = [
+      {
+        label: "negatiivseid l\xF5pphindeid",
+        data: data.finalGrades.negativeFinalGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "rahuldavaid hindeid",
+        data: data.finalGrades.fineFinalGrades,
+        borderWidth: 2,
+        borderColor: "#fa8231",
+        backgroundColor: "#fd9644",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "h\xE4id hindeid",
+        data: data.finalGrades.goodFinalGrades,
+        borderWidth: 2,
+        borderColor: "#f7b731",
+        backgroundColor: "#fed330",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "suurep\xE4raseid hindeid",
+        data: data.finalGrades.greatFinalGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
     if (graphType2 == "grades") {
       return {
         labels: data.grades.dates,
         datasets: [
           ...simpleMode ? datasetSimple : datasetAdvanced,
           { label: "hindeid kokku", data: data.grades.gradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
+        ]
+      };
+    } else if (graphType2 == "finalGrades") {
+      return {
+        labels: data.finalGrades.dates,
+        datasets: [
+          ...simpleMode ? datasetFinalSimple : datasetFinalAdvanced,
+          { label: "l\xF5pphindeid kokku", data: data.finalGrades.finalGradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
         ]
       };
     } else if (graphType2 == "absences") {
@@ -1545,6 +1633,35 @@
       };
     }
   }
+  function graphControllsFunction(button) {
+    let tempLastState = "";
+    if (["graphDataBtn", "graphFinalDataBtn"].includes(button)) {
+      tempLastState = graphType;
+    }
+    ;
+    switch (button) {
+      case "graphDataBtn":
+        console.log("last state:", lastState);
+        graphType = ["grades", "finalGrades"].includes(graphType) ? "absences" : lastState;
+        break;
+      case "graphFinalDataBtn":
+        graphType = graphType === "finalGrades" ? "grades" : "finalGrades";
+        break;
+      case "graphModeBtn":
+        simpleMode = !simpleMode;
+        break;
+    }
+    lastState = tempLastState;
+    let graphDataBtn = document.querySelector("#graphDataBtn");
+    graphDataBtn.text = graphType === "grades" || graphType === "finalGrades" ? "Puudumiste vaade" : "Hinnete vaade";
+    let graphFinalDataBtn = document.querySelector("#graphFinalDataBtn");
+    graphFinalDataBtn.text = graphType === "finalGrades" ? "Hinnete vaade" : "L\xF5pphindete vaade";
+    graphFinalDataBtn.style.display = graphType === "absences" ? "none" : "inline-block";
+    let graphModeBtn = document.querySelector("#graphModeBtn");
+    graphModeBtn.text = simpleMode ? "T\xE4iustatud vaade" : "Lihtne vaade";
+    graphModeBtn.style.display = graphType === "absences" ? "none" : "inline-block";
+    createGradeHistory();
+  }
   function createGraphElements(previousElement) {
     const gradeHistory = document.createElement("fieldset");
     gradeHistory.id = "gradeHistoryContainer";
@@ -1568,22 +1685,25 @@
     graphDataBtn.id = "graphDataBtn";
     graphDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
     graphDataBtn.text = "Puudumiste vaade";
+    const graphFinalDataBtn = document.createElement("a");
+    graphFinalDataBtn.id = "graphFinalDataBtn";
+    graphFinalDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
+    graphFinalDataBtn.text = "L\xF5pphindete vaade";
     const graphModeBtn = document.createElement("a");
     graphModeBtn.id = "graphModeBtn";
     graphModeBtn.className = "md-raised md-secondary md-button md-ink-ripple";
     graphModeBtn.text = "T\xE4iustatud vaade";
     graphDataBtn.addEventListener("click", () => {
-      graphType = graphType === "grades" ? "absences" : "grades";
-      graphDataBtn.text = graphDataBtn.text === "Hinnete vaade" ? "Puudumiste vaade" : "Hinnete vaade";
-      document.querySelector("#graphModeBtn").style.display = graphDataBtn.text === "Puudumiste vaade" ? "inline-block" : "none";
-      createGradeHistory();
+      graphControllsFunction("graphDataBtn");
+    });
+    graphFinalDataBtn.addEventListener("click", () => {
+      graphControllsFunction("graphFinalDataBtn");
     });
     graphModeBtn.addEventListener("click", () => {
-      simpleMode = !simpleMode;
-      graphModeBtn.text = graphModeBtn.text === "Lihtne vaade" ? "T\xE4iustatud vaade" : "Lihtne vaade";
-      createGradeHistory();
+      graphControllsFunction("graphModeBtn");
     });
     graphControlls.appendChild(graphDataBtn);
+    graphControlls.appendChild(graphFinalDataBtn);
     graphControlls.appendChild(graphModeBtn);
     const graph = document.createElement("canvas");
     graph.id = "gradeHistoryGraph";
@@ -1642,12 +1762,15 @@
                   if (label && label === "negatiivseid hindeid") {
                     return label + ": " + context.parsed.y + " | " + processedData.grades.negativeGradesMetric[context.dataIndex] + "%";
                   }
+                  if (label && label === "negatiivseid l\xF5pphindeid") {
+                    return label + ": " + context.parsed.y + " | " + processedData.finalGrades.negativeFinalGradesMetric[context.dataIndex] + "%";
+                  }
                   return label + ": " + context.parsed.y;
                 }
               }
             },
             legend: {
-              labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" }
+              labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" && legendItem.text !== "l\xF5pphindeid kokku" }
             }
           },
           scales: { y: { stacked: true, beginAtZero: true } }
@@ -1661,7 +1784,6 @@
   async function fetchGradeHistory() {
     try {
       const studentId = await getStudentId();
-      console.log(studentData);
       if (studentData && studentData[studentId]) {
         return studentData[studentId];
       }
