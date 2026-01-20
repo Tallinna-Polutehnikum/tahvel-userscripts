@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.5.0
+// @version      1.5.1
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -23,7 +23,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.5.0";
+  var version = "1.5.1";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -1549,7 +1549,7 @@
         stack: "grades"
       },
       {
-        label: "rahuldavaid hindeid",
+        label: "rahuldavaid l\xF5pphindeid",
         data: data.finalGrades.fineFinalGrades,
         borderWidth: 2,
         borderColor: "#fa8231",
@@ -1558,7 +1558,7 @@
         stack: "grades"
       },
       {
-        label: "h\xE4id hindeid",
+        label: "h\xE4id l\xF5pphindeid",
         data: data.finalGrades.goodFinalGrades,
         borderWidth: 2,
         borderColor: "#f7b731",
@@ -1567,7 +1567,7 @@
         stack: "grades"
       },
       {
-        label: "suurep\xE4raseid hindeid",
+        label: "suurep\xE4raseid l\xF5pphindeid",
         data: data.finalGrades.greatFinalGrades,
         borderWidth: 2,
         borderColor: "#20bf6b",
@@ -1589,7 +1589,12 @@
         labels: data.finalGrades.dates,
         datasets: [
           ...simpleMode ? datasetFinalSimple : datasetFinalAdvanced,
-          { label: "l\xF5pphindeid kokku", data: data.finalGrades.finalGradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
+          {
+            label: "l\xF5pphindeid kokku",
+            data: data.finalGrades.finalGradeTotal,
+            borderColor: "#4b6584",
+            backgroundColor: "#778ca3"
+          }
         ]
       };
     } else if (graphType2 == "absences") {
@@ -1638,7 +1643,6 @@
     if (["graphDataBtn", "graphFinalDataBtn"].includes(button)) {
       tempLastState = graphType;
     }
-    ;
     switch (button) {
       case "graphDataBtn":
         console.log("last state:", lastState);
@@ -1770,7 +1774,9 @@
               }
             },
             legend: {
-              labels: { filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" && legendItem.text !== "l\xF5pphindeid kokku" }
+              labels: {
+                filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" && legendItem.text !== "l\xF5pphindeid kokku"
+              }
             }
           },
           scales: { y: { stacked: true, beginAtZero: true } }

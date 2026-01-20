@@ -354,7 +354,7 @@ function graphData(data, graphType) {
       stack: 'grades',
     },
     {
-      label: 'rahuldavaid hindeid',
+      label: 'rahuldavaid lõpphindeid',
       data: data.finalGrades.fineFinalGrades,
       borderWidth: 2,
       borderColor: '#fa8231',
@@ -363,7 +363,7 @@ function graphData(data, graphType) {
       stack: 'grades',
     },
     {
-      label: 'häid hindeid',
+      label: 'häid lõpphindeid',
       data: data.finalGrades.goodFinalGrades,
       borderWidth: 2,
       borderColor: '#f7b731',
@@ -372,7 +372,7 @@ function graphData(data, graphType) {
       stack: 'grades',
     },
     {
-      label: 'suurepäraseid hindeid',
+      label: 'suurepäraseid lõpphindeid',
       data: data.finalGrades.greatFinalGrades,
       borderWidth: 2,
       borderColor: '#20bf6b',
@@ -395,9 +395,14 @@ function graphData(data, graphType) {
       labels: data.finalGrades.dates,
       datasets: [
         ...(simpleMode ? datasetFinalSimple : datasetFinalAdvanced),
-        { label: 'lõpphindeid kokku', data: data.finalGrades.finalGradeTotal, borderColor: '#4b6584', backgroundColor: '#778ca3' },
+        {
+          label: 'lõpphindeid kokku',
+          data: data.finalGrades.finalGradeTotal,
+          borderColor: '#4b6584',
+          backgroundColor: '#778ca3',
+        },
       ],
-    }
+    };
   } else if (graphType == 'absences') {
     return {
       labels: data.absences.dates,
@@ -445,7 +450,7 @@ function graphControllsFunction(button) {
 
   if (['graphDataBtn', 'graphFinalDataBtn'].includes(button)) {
     tempLastState = graphType;
-  };
+  }
 
   switch (button) {
     case 'graphDataBtn':
@@ -474,7 +479,7 @@ function graphControllsFunction(button) {
   graphModeBtn.style.display = graphType === 'absences' ? 'none' : 'inline-block';
 
   createGradeHistory();
-};
+}
 
 function createGraphElements(previousElement) {
   // Create grade history container
@@ -635,7 +640,12 @@ function initChart(graph, data) {
             },
           },
           legend: {
-            labels: { filter: legendItem => legendItem.text !== 'hindeid kokku' && legendItem.text !== 'puudumisi kokku' && legendItem.text !== 'lõpphindeid kokku' },
+            labels: {
+              filter: legendItem =>
+                legendItem.text !== 'hindeid kokku' &&
+                legendItem.text !== 'puudumisi kokku' &&
+                legendItem.text !== 'lõpphindeid kokku',
+            },
           },
         },
         scales: { y: { stacked: true, beginAtZero: true } },
