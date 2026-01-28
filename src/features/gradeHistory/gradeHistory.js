@@ -235,7 +235,7 @@ function manageChart(graph, data) {
 
   myChart.data = chartData;
 
-  myChart.update();
+  myChart.update('none');
 };
 
 // -------------DATA PROCESSING-------------
