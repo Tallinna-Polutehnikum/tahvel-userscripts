@@ -11,6 +11,10 @@ await esbuild.build({
   plugins: [envFilePlugin],
   bundle: true,
   outfile: 'build/tahvel-userscripts.user.js',
+  loader: {
+    '.css': 'text',
+    '.html': 'text'
+  },
   format: 'iife',
   platform: 'browser',
   banner: { js: header1 },
@@ -22,6 +26,10 @@ await esbuild.build({
   plugins: [envFilePlugin],
   bundle: true,
   outfile: 'build/data-collector.user.js',
+  loader: {
+    '.css': 'text',
+    '.html': 'text'
+  },
   format: 'iife',
   platform: 'browser',
   banner: { js: header2 },

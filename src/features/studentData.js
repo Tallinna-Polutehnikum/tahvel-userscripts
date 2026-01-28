@@ -1,35 +1,13 @@
-import { msalInstance, msalReady } from './msal.js';
+import { Authentication } from '../auth/authentication.js';
 import * as env from 'env';
+
+// Initialize MSAL authentication
+const auth = new Authentication();
 
 // Run the student data calculation only on Mondays
 // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 if (new Date().getDay() === 1) {
   calculateStudentData();
-}
-
-async function getAccessToken() {
-  let accessToken;
-
-  await msalReady;
-
-  // Prepare token request - adjust scopes and account as needed
-  const accounts = msalInstance.getAllAccounts();
-  if (accounts.length === 0) {
-    throw new Error('No authenticated user found');
-  }
-
-  // Include the active account in the request to acquireTokenSilent
-  const silentRequest = { scopes: [env.MSAL_CLIENT_ID + '/.default'], account: accounts[0] };
-
-  try {
-    const tokenResponse = await msalInstance.acquireTokenSilent(silentRequest);
-    accessToken = tokenResponse.accessToken;
-  } catch (error) {
-    console.error('Could not acquire token silently', error);
-    throw error;
-  }
-
-  return accessToken;
 }
 
 async function calculateStudentData() {
@@ -226,7 +204,7 @@ async function calculateStudentData() {
 
 async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
   let retries = 0;
-  const token = await getAccessToken(); // Acquire access token once before retry loop
+  const token = await auth.getToken(); // Acquire access token once before retry loop
 
   while (retries < maxRetries) {
     const response = await fetch(url, {

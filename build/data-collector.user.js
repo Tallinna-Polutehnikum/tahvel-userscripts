@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Data collector
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Student data collector for Tahvel.
 // @author       Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -25,59 +25,105 @@
   var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
   var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
 
-  // src/features/msal.js
-  var msalInstance;
-  var msalReady = new Promise((resolve) => {
-    let gradeHistoryScript = document.getElementById("msal-script");
-    function onMsalReady() {
-      resolve(initMsal());
+  // src/auth/msal.js
+  var Msal = class {
+    #instance;
+    #ready;
+    constructor() {
+      this.#ready = this.#loadScript().then(() => {
+        this.#initMsal();
+      });
     }
-    if (!gradeHistoryScript) {
-      gradeHistoryScript = document.createElement("script");
-      gradeHistoryScript.id = "msal-script";
-      gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
-      gradeHistoryScript.type = "text/javascript";
-      gradeHistoryScript.onload = onMsalReady;
-      document.body.appendChild(gradeHistoryScript);
-    } else if (window.msal && window.PublicClientApplication) {
-      resolve(initMsal());
-    } else {
-      gradeHistoryScript.onload = onMsalReady;
+    get msalInstance() {
+      return this.#instance;
     }
-  });
-  function initMsal() {
-    const msalConfig = {
-      auth: {
-        clientId: MSAL_CLIENT_ID,
-        authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
-        redirectUri: "https://tahvel.edu.ee/"
-      },
-      cache: { cacheLocation: "localStorage" }
-    };
-    msalInstance = new msal.PublicClientApplication(msalConfig);
-    return msalInstance;
-  }
+    get msalReady() {
+      return this.#ready;
+    }
+    #initMsal() {
+      const msalConfig = {
+        auth: {
+          clientId: MSAL_CLIENT_ID,
+          authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+          redirectUri: "https://tahvel.edu.ee/"
+        },
+        cache: { cacheLocation: "localStorage" }
+      };
+      this.#instance = new msal.PublicClientApplication(msalConfig);
+    }
+    #loadScript() {
+      return new Promise((resolve) => {
+        let gradeHistoryScript = document.getElementById("msal-script");
+        function onMsalReady() {
+          resolve();
+        }
+        if (!gradeHistoryScript) {
+          gradeHistoryScript = document.createElement("script");
+          gradeHistoryScript.id = "msal-script";
+          gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
+          gradeHistoryScript.type = "text/javascript";
+          gradeHistoryScript.onload = onMsalReady;
+          document.body.appendChild(gradeHistoryScript);
+        } else if (window.msal && window.PublicClientApplication) {
+          resolve();
+        } else {
+          gradeHistoryScript.onload = onMsalReady;
+        }
+      });
+    }
+  };
+
+  // src/auth/authentication.js
+  var Authentication = class extends Msal {
+    #accounts = [];
+    #msalToken = null;
+    constructor() {
+      super();
+      this.init();
+    }
+    async init() {
+      await this.msalReady;
+      this.#accounts = this.msalInstance.getAllAccounts();
+    }
+    async login() {
+      await this.msalReady;
+      await this.msalInstance.loginPopup({ scopes: ["user.read"] }).catch((error) => {
+        console.error("Login failed:", error);
+        return false;
+      });
+      this.#accounts = await this.msalInstance.getAllAccounts();
+      return true;
+    }
+    checkAuth() {
+      if (this.#accounts.length === 0) {
+        return false;
+      }
+      this.msalInstance.setActiveAccount(this.#accounts[0]);
+      return true;
+    }
+    async getToken() {
+      const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
+      if (!this.checkAuth()) {
+        return null;
+      }
+      if (!this.#msalToken) {
+        try {
+          const response = await this.msalInstance.acquireTokenSilent(silentRequest);
+          this.#msalToken = response.accessToken;
+        } catch (error) {
+          console.error("Silent token acquisition failed. Acquiring token using popup", error);
+          return null;
+        }
+      }
+      ;
+      return this.#msalToken;
+    }
+  };
 
   // src/features/studentData.js
+  var auth = new Authentication();
   if ((/* @__PURE__ */ new Date()).getDay() === 1) {
     calculateStudentData();
-  }
-  async function getAccessToken() {
-    let accessToken;
-    await msalReady;
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length === 0) {
-      throw new Error("No authenticated user found");
-    }
-    const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: accounts[0] };
-    try {
-      const tokenResponse = await msalInstance.acquireTokenSilent(silentRequest);
-      accessToken = tokenResponse.accessToken;
-    } catch (error) {
-      console.error("Could not acquire token silently", error);
-      throw error;
-    }
-    return accessToken;
   }
   async function calculateStudentData() {
     const requestId = Math.floor(Math.random() * 1e6);
@@ -234,7 +280,7 @@
   }
   async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
     let retries = 0;
-    const token = await getAccessToken();
+    const token = await auth.getToken();
     while (retries < maxRetries) {
       const response = await fetch(url, {
         method: "POST",

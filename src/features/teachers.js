@@ -1,4 +1,5 @@
 import { RoomDetails } from '../datasets/RoomDetails';
+import { gradeHistory } from './gradeHistory/gradeHistory';
 
 if (typeof GM_log === 'function') console.log = GM_log;
 
@@ -52,7 +53,7 @@ if (typeof GM_log === 'function') console.log = GM_log;
   //#region Entry point to scripts and MutationObserver config
 
   // Trigger when Angular app changes content
-  observeTargetChange(document.body, () => {
+  observeTargetChange(document.body, async () => {
     // Update page title based on the last breadcrumb
     // If possible add ID from the URL to differentiate between multiple tabs
     let firstPath = window.location.href.match(/#\/([^\?\/]*)/)?.[1];
@@ -192,6 +193,14 @@ if (typeof GM_log === 'function') console.log = GM_log;
       observeTargetChange(document.body, () => {
         injectSeatInfoToColumn(RoomDetails);
       });
+    }
+
+    if (['/results', '/myResults'].some(page => window.location.hash.includes(page))) {
+      if (!document.getElementById('grade-history-marker')) {
+        await gradeHistory();
+      }
+    } else {
+      document.getElementById('grade-history-marker')?.remove();
     }
   });
 

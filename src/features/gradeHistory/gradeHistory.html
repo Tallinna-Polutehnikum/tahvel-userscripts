@@ -1,0 +1,35 @@
+<fieldset id="grade-history-container">
+  <legend>Ajalugu</legend>
+
+  <!-- Graph container -->
+  <div id="graph-container">
+    <div id="graph-controlls">
+      <a id="graph-metric-btn" class="md-raised md-primary md-button md-ink-ripple">
+        Puudumiste vaade
+      </a>
+
+      <a id="graph-scope-btn" class="md-raised md-primary md-button md-ink-ripple">
+        Lõpphinnete vaade
+      </a>
+
+      <a id="graph-mode-btn" class="md-raised md-secondary md-button md-ink-ripple">
+        Täiustatud vaade
+      </a>
+    </div>
+
+    <canvas id="grade-history-graph" style="width: 100%; height: 100%; margin: 2px;"></canvas>
+  </div>
+
+  <!-- Login overlay -->
+  <div id="graph-login-overlay" class="grade-history-overlay" style="display: none;">
+    <div id="graph-login-container" class="graph-login-container">
+      <h1>Logi sisse hinnete ajaloo nägemiseks</h1>
+      <button id="graph-login-btn" class="md-raised md-primary md-button md-ink-ripple">Logi sisse</button>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="graph-loading-overlay" class="grade-history-overlay" style="display: none;">
+    <div id="graph-spinner" class="graph-spinner"></div>
+  </div>
+</fieldset>

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.5.1
+// @version      1.5.2
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -9,6 +9,7 @@
 // @updateURL    https://bit.ly/tahvel-userscript
 // @downloadURL  https://bit.ly/tahvel-userscript
 // @grant        GM_log
+// @grant        GM_addStyle
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
 
@@ -23,7 +24,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.5.1";
+  var version = "1.5.2";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -128,6 +129,659 @@
     { roomNumber: "B513", seats: "8", computers: "", area: "25", board: "", os: "" }
   ];
 
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
+  // src/auth/msal.js
+  var Msal = class {
+    #instance;
+    #ready;
+    constructor() {
+      this.#ready = this.#loadScript().then(() => {
+        this.#initMsal();
+      });
+    }
+    get msalInstance() {
+      return this.#instance;
+    }
+    get msalReady() {
+      return this.#ready;
+    }
+    #initMsal() {
+      const msalConfig = {
+        auth: {
+          clientId: MSAL_CLIENT_ID,
+          authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+          redirectUri: "https://tahvel.edu.ee/"
+        },
+        cache: { cacheLocation: "localStorage" }
+      };
+      this.#instance = new msal.PublicClientApplication(msalConfig);
+    }
+    #loadScript() {
+      return new Promise((resolve) => {
+        let gradeHistoryScript = document.getElementById("msal-script");
+        function onMsalReady() {
+          resolve();
+        }
+        if (!gradeHistoryScript) {
+          gradeHistoryScript = document.createElement("script");
+          gradeHistoryScript.id = "msal-script";
+          gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
+          gradeHistoryScript.type = "text/javascript";
+          gradeHistoryScript.onload = onMsalReady;
+          document.body.appendChild(gradeHistoryScript);
+        } else if (window.msal && window.PublicClientApplication) {
+          resolve();
+        } else {
+          gradeHistoryScript.onload = onMsalReady;
+        }
+      });
+    }
+  };
+
+  // src/auth/authentication.js
+  var Authentication = class extends Msal {
+    #accounts = [];
+    #msalToken = null;
+    constructor() {
+      super();
+      this.init();
+    }
+    async init() {
+      await this.msalReady;
+      this.#accounts = this.msalInstance.getAllAccounts();
+    }
+    async login() {
+      await this.msalReady;
+      await this.msalInstance.loginPopup({ scopes: ["user.read"] }).catch((error) => {
+        console.error("Login failed:", error);
+        return false;
+      });
+      this.#accounts = await this.msalInstance.getAllAccounts();
+      return true;
+    }
+    checkAuth() {
+      if (this.#accounts.length === 0) {
+        return false;
+      }
+      this.msalInstance.setActiveAccount(this.#accounts[0]);
+      return true;
+    }
+    async getToken() {
+      const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
+      if (!this.checkAuth()) {
+        return null;
+      }
+      if (!this.#msalToken) {
+        try {
+          const response = await this.msalInstance.acquireTokenSilent(silentRequest);
+          this.#msalToken = response.accessToken;
+        } catch (error) {
+          console.error("Silent token acquisition failed. Acquiring token using popup", error);
+          return null;
+        }
+      }
+      ;
+      return this.#msalToken;
+    }
+  };
+
+  // src/features/gradeHistory/graphComponents.js
+  var GraphComponents = class {
+    #graph;
+    #login;
+    #loading;
+    #isLoginVisible = false;
+    #isLoadingVisible = false;
+    constructor({ graph, login, loading }) {
+      if (!graph || !login || !loading) {
+        console.error({ graph, login, loading });
+        throw new Error("GraphComponents: missing DOM elements");
+      }
+      this.#graph = graph;
+      this.#login = login;
+      this.#loading = loading;
+    }
+    get graphComponent() {
+      return this.#graph;
+    }
+    get isLoginVisible() {
+      return this.#isLoginVisible;
+    }
+    get isLoadingVisible() {
+      return this.#isLoadingVisible;
+    }
+    toggleLogin() {
+      this.#isLoginVisible = !this.#isLoginVisible;
+      this.#login.style.display = this.#isLoginVisible ? "flex" : "none";
+    }
+    toggleLoading() {
+      this.#isLoadingVisible = !this.#isLoadingVisible;
+      this.#loading.style.display = this.#isLoadingVisible ? "flex" : "none";
+    }
+  };
+
+  // src/features/gradeHistory/waitForElement.js
+  async function waitForElement(selector) {
+    return new Promise((resolve) => {
+      const element = document.querySelector(selector);
+      if (element) return resolve(element);
+      const observer = new MutationObserver(() => {
+        const element2 = document.querySelector(selector);
+        if (element2) {
+          resolve(element2);
+          observer.disconnect();
+        }
+        ;
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  // src/features/gradeHistory/getStudentId.js
+  function getStudentId() {
+    let id = null;
+    const url = window.location.href;
+    const match = url.match(/\/students\/(\d+)/);
+    id = match ? match[1] : null;
+    if (!id) {
+      id = fetch("https://tahvel.edu.ee/hois_back/user", {
+        method: "GET",
+        credentials: "include",
+        headers: { accept: "application/json, text/plain, */*" }
+      }).then((res) => res.json()).then((data) => data.student);
+    }
+    return id;
+  }
+
+  // src/datasets/ExampleHistory.js
+  var exampleData = {
+    grades: [
+      { date: "29.09", negativeGrades: "1", fineGrades: "3", goodGrades: "5", greatGrades: "5" },
+      { date: "07.10", negativeGrades: "2", fineGrades: "4", goodGrades: "6", greatGrades: "6" },
+      { date: "14.10", negativeGrades: "1", fineGrades: "4", goodGrades: "7", greatGrades: "7" },
+      { date: "21.10", negativeGrades: "3", fineGrades: "5", goodGrades: "8", greatGrades: "8" },
+      { date: "28.10", negativeGrades: "2", fineGrades: "5", goodGrades: "9", greatGrades: "9" },
+      { date: "04.11", negativeGrades: "4", fineGrades: "6", goodGrades: "10", greatGrades: "10" },
+      { date: "11.11", negativeGrades: "2", fineGrades: "6", goodGrades: "11", greatGrades: "11" },
+      { date: "18.11", negativeGrades: "3", fineGrades: "7", goodGrades: "12", greatGrades: "12" },
+      { date: "25.11", negativeGrades: "1", fineGrades: "7", goodGrades: "13", greatGrades: "13" },
+      { date: "02.12", negativeGrades: "2", fineGrades: "8", goodGrades: "14", greatGrades: "14" },
+      { date: "09.12", negativeGrades: "3", fineGrades: "8", goodGrades: "15", greatGrades: "15" },
+      { date: "16.12", negativeGrades: "2", fineGrades: "9", goodGrades: "16", greatGrades: "16" },
+      { date: "23.12", negativeGrades: "5", fineGrades: "9", goodGrades: "17", greatGrades: "17" },
+      { date: "30.12", negativeGrades: "6", fineGrades: "10", goodGrades: "18", greatGrades: "18" },
+      { date: "06.01", negativeGrades: "8", fineGrades: "11", goodGrades: "19", greatGrades: "19" },
+      { date: "13.01", negativeGrades: "9", fineGrades: "12", goodGrades: "20", greatGrades: "20" },
+      { date: "20.01", negativeGrades: "9", fineGrades: "13", goodGrades: "21", greatGrades: "21" },
+      { date: "27.01", negativeGrades: "7", fineGrades: "14", goodGrades: "22", greatGrades: "22" },
+      { date: "03.02", negativeGrades: "6", fineGrades: "15", goodGrades: "23", greatGrades: "23" },
+      { date: "10.02", negativeGrades: "5", fineGrades: "16", goodGrades: "24", greatGrades: "24" },
+      { date: "17.02", negativeGrades: "4", fineGrades: "17", goodGrades: "25", greatGrades: "25" },
+      { date: "24.02", negativeGrades: "3", fineGrades: "18", goodGrades: "26", greatGrades: "26" },
+      { date: "03.03", negativeGrades: "2", fineGrades: "19", goodGrades: "27", greatGrades: "27" },
+      { date: "10.03", negativeGrades: "2", fineGrades: "20", goodGrades: "28", greatGrades: "28" },
+      { date: "17.03", negativeGrades: "1", fineGrades: "21", goodGrades: "29", greatGrades: "29" }
+    ],
+    finalGrades: [
+      { date: "29.09", negativeFinalGrades: "1", fineFinalGrades: "3", goodFinalGrades: "5", greatFinalGrades: "5" },
+      { date: "07.10", negativeFinalGrades: "2", fineFinalGrades: "4", goodFinalGrades: "6", greatFinalGrades: "6" },
+      { date: "14.10", negativeFinalGrades: "1", fineFinalGrades: "4", goodFinalGrades: "7", greatFinalGrades: "7" },
+      { date: "21.10", negativeFinalGrades: "3", fineFinalGrades: "5", goodFinalGrades: "8", greatFinalGrades: "8" },
+      { date: "28.10", negativeFinalGrades: "2", fineFinalGrades: "5", goodFinalGrades: "9", greatFinalGrades: "9" },
+      { date: "04.11", negativeFinalGrades: "4", fineFinalGrades: "6", goodFinalGrades: "10", greatFinalGrades: "10" },
+      { date: "11.11", negativeFinalGrades: "2", fineFinalGrades: "6", goodFinalGrades: "11", greatFinalGrades: "11" },
+      { date: "18.11", negativeFinalGrades: "3", fineFinalGrades: "7", goodFinalGrades: "12", greatFinalGrades: "12" },
+      { date: "25.11", negativeFinalGrades: "1", fineFinalGrades: "7", goodFinalGrades: "13", greatFinalGrades: "13" },
+      { date: "02.12", negativeFinalGrades: "2", fineFinalGrades: "8", goodFinalGrades: "14", greatFinalGrades: "14" },
+      { date: "09.12", negativeFinalGrades: "3", fineFinalGrades: "8", goodFinalGrades: "15", greatFinalGrades: "15" },
+      { date: "16.12", negativeFinalGrades: "2", fineFinalGrades: "9", goodFinalGrades: "16", greatFinalGrades: "16" },
+      { date: "23.12", negativeFinalGrades: "5", fineFinalGrades: "9", goodFinalGrades: "17", greatFinalGrades: "17" },
+      { date: "30.12", negativeFinalGrades: "6", fineFinalGrades: "10", goodFinalGrades: "18", greatFinalGrades: "18" },
+      { date: "06.01", negativeFinalGrades: "8", fineFinalGrades: "11", goodFinalGrades: "19", greatFinalGrades: "19" },
+      { date: "13.01", negativeFinalGrades: "9", fineFinalGrades: "12", goodFinalGrades: "20", greatFinalGrades: "20" },
+      { date: "20.01", negativeFinalGrades: "9", fineFinalGrades: "13", goodFinalGrades: "21", greatFinalGrades: "21" },
+      { date: "27.01", negativeFinalGrades: "7", fineFinalGrades: "14", goodFinalGrades: "22", greatFinalGrades: "22" },
+      { date: "03.02", negativeFinalGrades: "6", fineFinalGrades: "15", goodFinalGrades: "23", greatFinalGrades: "23" },
+      { date: "10.02", negativeFinalGrades: "5", fineFinalGrades: "16", goodFinalGrades: "24", greatFinalGrades: "24" },
+      { date: "17.02", negativeFinalGrades: "4", fineFinalGrades: "17", goodFinalGrades: "25", greatFinalGrades: "25" },
+      { date: "24.02", negativeFinalGrades: "3", fineFinalGrades: "18", goodFinalGrades: "26", greatFinalGrades: "26" },
+      { date: "03.03", negativeFinalGrades: "2", fineFinalGrades: "19", goodFinalGrades: "27", greatFinalGrades: "27" },
+      { date: "10.03", negativeFinalGrades: "2", fineFinalGrades: "20", goodFinalGrades: "28", greatFinalGrades: "28" },
+      { date: "17.03", negativeFinalGrades: "1", fineFinalGrades: "21", goodFinalGrades: "29", greatFinalGrades: "29" }
+    ],
+    absences: [
+      { date: "29.09", withReason: "2", noReason: "1", metric: "90" },
+      { date: "07.10", withReason: "3", noReason: "2", metric: "80" },
+      { date: "14.10", withReason: "4", noReason: "3", metric: "70" },
+      { date: "21.10", withReason: "5", noReason: "4", metric: "60" }
+    ]
+  };
+
+  // src/features/gradeHistory/gradeHistory.css
+  var gradeHistory_default = "#grade-history-container {\n  position: relative;\n  height: 400px;\n  margin: 2px;\n  border: 1px solid hsl(60, 4%, 85%);\n}\n\n#graph-container {\n  width: 100%;\n  height: 85%;\n}\n\n.grade-history-overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: rgba(0, 0, 0, 0.4);\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  backdrop-filter: blur(2px); /* Modern browsers - blurs background */\n  z-index: 1;\n}\n\n.graph-login-container {\n  background: white;\n  padding: 15px;\n  border-radius: 8px;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);\n  width: 300px;\n  height: 200px;\n  text-align: center;\n}\n\n.graph-spinner {\n  position: absolute;\n  left: 50%;\n  top: 50%;\n  z-index: 1;\n  width: 120px;\n  height: 120px;\n  margin: -76px 0 0 -76px;\n  border: 16px solid #f3f3f3;\n  border-radius: 50%;\n  border-top: 16px solid #3498db;\n  -webkit-animation: spin 2s linear infinite;\n  animation: spin 2s linear infinite;\n}\n\n@-webkit-keyframes spin {\n  0% { -webkit-transform: rotate(0deg); }\n  100% { -webkit-transform: rotate(360deg); }\n}\n\n@keyframes spin {\n  0% { transform: rotate(0deg); }\n  100% { transform: rotate(360deg); }\n}";
+
+  // src/features/gradeHistory/gradeHistory.html
+  var gradeHistory_default2 = '<fieldset id="grade-history-container">\n  <legend>Ajalugu</legend>\n\n  <!-- Graph container -->\n  <div id="graph-container">\n    <div id="graph-controlls">\n      <a id="graph-metric-btn" class="md-raised md-primary md-button md-ink-ripple">\n        Puudumiste vaade\n      </a>\n\n      <a id="graph-scope-btn" class="md-raised md-primary md-button md-ink-ripple">\n        L\xF5pphinnete vaade\n      </a>\n\n      <a id="graph-mode-btn" class="md-raised md-secondary md-button md-ink-ripple">\n        T\xE4iustatud vaade\n      </a>\n    </div>\n\n    <canvas id="grade-history-graph" style="width: 100%; height: 100%; margin: 2px;"></canvas>\n  </div>\n\n  <!-- Login overlay -->\n  <div id="graph-login-overlay" class="grade-history-overlay" style="display: none;">\n    <div id="graph-login-container" class="graph-login-container">\n      <h1>Logi sisse hinnete ajaloo n\xE4gemiseks</h1>\n      <button id="graph-login-btn" class="md-raised md-primary md-button md-ink-ripple">Logi sisse</button>\n    </div>\n  </div>\n\n  <!-- Loading overlay -->\n  <div id="graph-loading-overlay" class="grade-history-overlay" style="display: none;">\n    <div id="graph-spinner" class="graph-spinner"></div>\n  </div>\n</fieldset>';
+
+  // src/features/gradeHistory/gradeHistory.js
+  window.addEventListener("hashchange", gradeHistory);
+  GM_addStyle(gradeHistory_default);
+  var auth = new Authentication();
+  var studentData = {};
+  var components;
+  var simpleMode = true;
+  var graphType = "grades";
+  var lastState = "grades";
+  async function gradeHistory() {
+    const hash = window.location.hash;
+    if (!["/results", "/myResults"].some((page) => hash.includes(page))) return;
+    if (document.querySelector("#grade-history-marker")) return;
+    let marker = document.createElement("div");
+    marker.setAttribute("id", "grade-history-marker");
+    document.body.appendChild(marker);
+    console.log("Initializing grade history feature...");
+    await getGraphElements().then((elements) => {
+      components = new GraphComponents({
+        graph: elements.graph,
+        login: elements.loginOverlay,
+        loading: elements.loadingOverlay
+      });
+    });
+    components.toggleLoading();
+    if (!manageLogin()) {
+      manageChart(components.graphComponent, processData(exampleData));
+    } else {
+      manageChart(components.graphComponent, await fetchGradeHistory());
+    }
+    components.toggleLoading();
+    console.log("Grade history feature initialized.");
+  }
+  function manageLogin() {
+    if (!auth.checkAuth()) {
+      if (!components.isLoginVisible) {
+        components.toggleLogin();
+      }
+      return false;
+    }
+    if (components.isLoginVisible) {
+      components.toggleLogin();
+    }
+    return true;
+  }
+  async function getGraphElements() {
+    const fieldSet = await waitForElement("#main-content fieldset");
+    if (fieldSet.querySelector("#grade-history-graph")) {
+      return {
+        graphComponent: fieldSet.querySelector("#grade-history-graph"),
+        loginComponent: fieldSet.querySelector("#graph-login-overlay"),
+        loadingComponent: fieldSet.querySelector("#graph-loading-overlay")
+      };
+    }
+    ;
+    return createGraphElements(fieldSet);
+  }
+  function createGraphElements(previousElement) {
+    const template = document.createElement("template");
+    template.innerHTML = gradeHistory_default2;
+    const ui = template.content.firstElementChild;
+    previousElement.after(ui);
+    const graph = ui.querySelector("#grade-history-graph");
+    const loginOverlay = ui.querySelector("#graph-login-overlay");
+    const loadingOverlay = ui.querySelector("#graph-loading-overlay");
+    ui.querySelector("#graph-metric-btn").addEventListener("click", () => {
+      graphControllsFunction("graph-metric-btn");
+    });
+    ui.querySelector("#graph-scope-btn").addEventListener("click", () => {
+      graphControllsFunction("graph-scope-btn");
+    });
+    ui.querySelector("#graph-mode-btn").addEventListener("click", () => {
+      graphControllsFunction("graph-mode-btn");
+    });
+    ui.querySelector("#graph-login-btn").addEventListener("click", async () => {
+      let loginResult = await auth.login();
+      if (loginResult) {
+        if (!manageLogin()) {
+          manageChart(components.graphComponent, processData(exampleData));
+        } else {
+          manageChart(components.graphComponent, await fetchGradeHistory());
+        }
+      }
+    });
+    return { graph, loginOverlay, loadingOverlay };
+  }
+  async function graphControllsFunction(button) {
+    let tempLastState = "";
+    if (["graph-metric-btn", "graph-scope-btn"].includes(button)) {
+      tempLastState = graphType;
+    }
+    switch (button) {
+      case "graph-metric-btn":
+        graphType = ["grades", "finalGrades"].includes(graphType) ? "absences" : lastState;
+        break;
+      case "graph-scope-btn":
+        graphType = graphType === "finalGrades" ? "grades" : "finalGrades";
+        break;
+      case "graph-mode-btn":
+        simpleMode = !simpleMode;
+        break;
+    }
+    lastState = tempLastState;
+    let graphDataBtn = document.querySelector("#graph-metric-btn");
+    graphDataBtn.text = graphType === "grades" || graphType === "finalGrades" ? "Puudumiste vaade" : "Hinnete vaade";
+    let graphFinalDataBtn = document.querySelector("#graph-scope-btn");
+    graphFinalDataBtn.text = graphType === "finalGrades" ? "Hinnete vaade" : "L\xF5pphindete vaade";
+    graphFinalDataBtn.style.display = graphType === "absences" ? "none" : "inline-block";
+    let graphModeBtn = document.querySelector("#graph-mode-btn");
+    graphModeBtn.text = simpleMode ? "T\xE4iustatud vaade" : "Lihtne vaade";
+    graphModeBtn.style.display = graphType === "absences" ? "none" : "inline-block";
+    manageChart(components.graphComponent, await fetchGradeHistory());
+  }
+  function manageChart(graph, data) {
+    const chartData = graphData(data, graphType);
+    let myChart = Chart.getChart(graph);
+    if (!myChart) {
+      myChart = new Chart(graph, {
+        type: "line",
+        data: chartData,
+        options: {
+          plugins: {
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  let label = context.dataset.label || "";
+                  if (label && label === "puudumisi kokku") {
+                    return label + ": " + context.parsed.y + " | " + data.absences.metrics[context.dataIndex] + "%";
+                  }
+                  if (label && label === "negatiivseid hindeid") {
+                    return label + ": " + context.parsed.y + " | " + data.grades.negativeGradesMetric[context.dataIndex] + "%";
+                  }
+                  if (label && label === "negatiivseid l\xF5pphindeid") {
+                    return label + ": " + context.parsed.y + " | " + data.finalGrades.negativeFinalGradesMetric[context.dataIndex] + "%";
+                  }
+                  return label + ": " + context.parsed.y;
+                }
+              }
+            },
+            legend: {
+              labels: {
+                filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" && legendItem.text !== "l\xF5pphindeid kokku"
+              }
+            }
+          },
+          scales: { y: { stacked: true, beginAtZero: true } },
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+      return;
+    }
+    myChart.data = chartData;
+    myChart.update();
+  }
+  async function fetchGradeHistory() {
+    try {
+      const studentId = await getStudentId();
+      if (studentData && studentData[studentId]) {
+        return studentData[studentId];
+      }
+      const accessToken = await auth.getToken();
+      const apiResponse = await fetch(SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+      }).then((res) => res.json());
+      studentData[studentId] = processData(apiResponse);
+      return studentData[studentId];
+    } catch (error) {
+      console.error("Error during fetchWithToken:", error);
+      throw error;
+    }
+  }
+  function processData(data) {
+    let processedData = {
+      grades: {
+        dates: [],
+        negativeGrades: [],
+        positiveGrades: [],
+        fineGrades: [],
+        goodGrades: [],
+        greatGrades: [],
+        gradeTotal: [],
+        negativeGradesMetric: []
+      },
+      finalGrades: {
+        dates: [],
+        negativeFinalGrades: [],
+        positiveFinalGrades: [],
+        fineFinalGrades: [],
+        goodFinalGrades: [],
+        greatFinalGrades: [],
+        finalGradeTotal: [],
+        negativeFinalGradesMetric: []
+      },
+      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] }
+    };
+    data.grades.forEach((e) => {
+      processedData.grades.dates.push(e.date);
+      processedData.grades.negativeGrades.push(e.negativeGrades);
+      processedData.grades.positiveGrades.push(+e.fineGrades + +e.goodGrades + +e.greatGrades);
+      processedData.grades.fineGrades.push(e.fineGrades);
+      processedData.grades.goodGrades.push(e.goodGrades);
+      processedData.grades.greatGrades.push(e.greatGrades);
+      processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
+      processedData.grades.negativeGradesMetric.push(
+        (+e.negativeGrades * 100 / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
+      );
+    });
+    data.finalGrades.forEach((e) => {
+      processedData.finalGrades.dates.push(e.date);
+      processedData.finalGrades.negativeFinalGrades.push(e.negativeFinalGrades);
+      processedData.finalGrades.positiveFinalGrades.push(+e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades);
+      processedData.finalGrades.fineFinalGrades.push(e.fineFinalGrades);
+      processedData.finalGrades.goodFinalGrades.push(e.goodFinalGrades);
+      processedData.finalGrades.greatFinalGrades.push(e.greatFinalGrades);
+      processedData.finalGrades.finalGradeTotal.push(
+        +e.negativeFinalGrades + +e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades
+      );
+      processedData.finalGrades.negativeFinalGradesMetric.push(
+        (+e.negativeFinalGrades * 100 / +processedData.finalGrades.finalGradeTotal.slice(-1)).toFixed(0)
+      );
+    });
+    data.absences.forEach((e) => {
+      processedData.absences.dates.push(e.date);
+      processedData.absences.noReason.push(e.noReason);
+      processedData.absences.withReason.push(e.withReason);
+      processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
+      processedData.absences.lessons.push(((+e.noReason + +e.withReason) * 100 / +e.metric).toFixed(0));
+      processedData.absences.metrics.push(e.metric);
+    });
+    return processedData;
+  }
+  function graphData(data, graphType2) {
+    let datasetSimple = [
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "positiivseid hindeid",
+        data: data.grades.positiveGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    let datasetAdvanced = [
+      {
+        label: "negatiivseid hindeid",
+        data: data.grades.negativeGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "rahuldavaid hindeid",
+        data: data.grades.fineGrades,
+        borderWidth: 2,
+        borderColor: "#fa8231",
+        backgroundColor: "#fd9644",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "h\xE4id hindeid",
+        data: data.grades.goodGrades,
+        borderWidth: 2,
+        borderColor: "#f7b731",
+        backgroundColor: "#fed330",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "suurep\xE4raseid hindeid",
+        data: data.grades.greatGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    let datasetFinalSimple = [
+      {
+        label: "negatiivseid l\xF5pphindeid",
+        data: data.finalGrades.negativeFinalGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "positiivseid l\xF5pphindeid",
+        data: data.finalGrades.positiveFinalGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    let datasetFinalAdvanced = [
+      {
+        label: "negatiivseid l\xF5pphindeid",
+        data: data.finalGrades.negativeFinalGrades,
+        borderWidth: 2,
+        borderColor: "#eb3b5a",
+        backgroundColor: "#fc5c65",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "rahuldavaid l\xF5pphindeid",
+        data: data.finalGrades.fineFinalGrades,
+        borderWidth: 2,
+        borderColor: "#fa8231",
+        backgroundColor: "#fd9644",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "h\xE4id l\xF5pphindeid",
+        data: data.finalGrades.goodFinalGrades,
+        borderWidth: 2,
+        borderColor: "#f7b731",
+        backgroundColor: "#fed330",
+        fill: true,
+        stack: "grades"
+      },
+      {
+        label: "suurep\xE4raseid l\xF5pphindeid",
+        data: data.finalGrades.greatFinalGrades,
+        borderWidth: 2,
+        borderColor: "#20bf6b",
+        backgroundColor: "#26de81",
+        fill: true,
+        stack: "grades"
+      }
+    ];
+    if (graphType2 == "grades") {
+      return {
+        labels: data.grades.dates,
+        datasets: [
+          ...simpleMode ? datasetSimple : datasetAdvanced,
+          { label: "hindeid kokku", data: data.grades.gradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
+        ]
+      };
+    } else if (graphType2 == "finalGrades") {
+      return {
+        labels: data.finalGrades.dates,
+        datasets: [
+          ...simpleMode ? datasetFinalSimple : datasetFinalAdvanced,
+          {
+            label: "l\xF5pphindeid kokku",
+            data: data.finalGrades.finalGradeTotal,
+            borderColor: "#4b6584",
+            backgroundColor: "#778ca3"
+          }
+        ]
+      };
+    } else if (graphType2 == "absences") {
+      return {
+        labels: data.absences.dates,
+        datasets: [
+          {
+            label: "p\xF5hjuseta puudumised",
+            data: data.absences.noReason,
+            borderWidth: 2,
+            borderColor: "#a5b1c2",
+            backgroundColor: "#d1d8e0",
+            fill: true,
+            stack: "absences"
+          },
+          {
+            label: "p\xF5hjusega puudumised",
+            data: data.absences.withReason,
+            borderWidth: 2,
+            borderColor: "#3867d6",
+            backgroundColor: "#4b7bec",
+            fill: true,
+            stack: "absences"
+          },
+          {
+            label: "puudumisi kokku",
+            data: data.absences.absencesTotal,
+            borderColor: "#2d98da",
+            backgroundColor: "#45aaf2",
+            fill: true,
+            stack: "none"
+          },
+          {
+            label: "tunde kokku",
+            data: data.absences.lessons,
+            borderColor: "#4b6584",
+            backgroundColor: "#778ca3",
+            fill: true
+          }
+        ]
+      };
+    }
+  }
+
   // src/features/teachers.js
   if (typeof GM_log === "function") console.log = GM_log;
   (function() {
@@ -153,7 +807,7 @@
     let currentStudent = null;
     let currentClassTeacherReport = null;
     let currentStudentModules = null;
-    observeTargetChange(document.body, () => {
+    observeTargetChange(document.body, async () => {
       let firstPath = window.location.href.match(/#\/([^\?\/]*)/)?.[1];
       let id = window.location.href.match(/\/(\d+)\//)?.[1] ?? "";
       id = id.length > 0 ? ` #${id}` : "";
@@ -256,6 +910,13 @@
         observeTargetChange(document.body, () => {
           injectSeatInfoToColumn(RoomDetails);
         });
+      }
+      if (["/results", "/myResults"].some((page) => window.location.hash.includes(page))) {
+        if (!document.getElementById("grade-history-marker")) {
+          await gradeHistory();
+        }
+      } else {
+        document.getElementById("grade-history-marker")?.remove();
       }
     });
     function observeTargetChange(targetNode, callback) {
@@ -1197,640 +1858,5 @@
       return decodeURIComponent(match[2]);
     }
     return null;
-  }
-
-  // env-ns:env
-  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
-  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
-  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
-
-  // src/features/msal.js
-  var msalInstance;
-  var msalReady = new Promise((resolve) => {
-    let gradeHistoryScript = document.getElementById("msal-script");
-    function onMsalReady() {
-      resolve(initMsal());
-    }
-    if (!gradeHistoryScript) {
-      gradeHistoryScript = document.createElement("script");
-      gradeHistoryScript.id = "msal-script";
-      gradeHistoryScript.src = "https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js";
-      gradeHistoryScript.type = "text/javascript";
-      gradeHistoryScript.onload = onMsalReady;
-      document.body.appendChild(gradeHistoryScript);
-    } else if (window.msal && window.PublicClientApplication) {
-      resolve(initMsal());
-    } else {
-      gradeHistoryScript.onload = onMsalReady;
-    }
-  });
-  function initMsal() {
-    const msalConfig = {
-      auth: {
-        clientId: MSAL_CLIENT_ID,
-        authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
-        redirectUri: "https://tahvel.edu.ee/"
-      },
-      cache: { cacheLocation: "localStorage" }
-    };
-    msalInstance = new msal.PublicClientApplication(msalConfig);
-    return msalInstance;
-  }
-
-  // src/features/gradeHistory.js
-  window.addEventListener("hashchange", () => {
-    hash = window.location.hash;
-    gradeHistoryMain();
-  });
-  var exampleData = {
-    grades: [
-      { date: "29.09", negativeGrades: "1", fineGrades: "3", goodGrades: "5", greatGrades: "5" },
-      { date: "07.10", negativeGrades: "2", fineGrades: "4", goodGrades: "6", greatGrades: "6" },
-      { date: "14.10", negativeGrades: "1", fineGrades: "4", goodGrades: "7", greatGrades: "7" },
-      { date: "21.10", negativeGrades: "3", fineGrades: "5", goodGrades: "8", greatGrades: "8" },
-      { date: "28.10", negativeGrades: "2", fineGrades: "5", goodGrades: "9", greatGrades: "9" },
-      { date: "04.11", negativeGrades: "4", fineGrades: "6", goodGrades: "10", greatGrades: "10" },
-      { date: "11.11", negativeGrades: "2", fineGrades: "6", goodGrades: "11", greatGrades: "11" },
-      { date: "18.11", negativeGrades: "3", fineGrades: "7", goodGrades: "12", greatGrades: "12" },
-      { date: "25.11", negativeGrades: "1", fineGrades: "7", goodGrades: "13", greatGrades: "13" },
-      { date: "02.12", negativeGrades: "2", fineGrades: "8", goodGrades: "14", greatGrades: "14" },
-      { date: "09.12", negativeGrades: "3", fineGrades: "8", goodGrades: "15", greatGrades: "15" },
-      { date: "16.12", negativeGrades: "2", fineGrades: "9", goodGrades: "16", greatGrades: "16" },
-      { date: "23.12", negativeGrades: "5", fineGrades: "9", goodGrades: "17", greatGrades: "17" },
-      { date: "30.12", negativeGrades: "6", fineGrades: "10", goodGrades: "18", greatGrades: "18" },
-      { date: "06.01", negativeGrades: "8", fineGrades: "11", goodGrades: "19", greatGrades: "19" },
-      { date: "13.01", negativeGrades: "10", fineGrades: "12", goodGrades: "20", greatGrades: "20" },
-      { date: "20.01", negativeGrades: "9", fineGrades: "13", goodGrades: "21", greatGrades: "21" },
-      { date: "27.01", negativeGrades: "7", fineGrades: "14", goodGrades: "22", greatGrades: "22" },
-      { date: "03.02", negativeGrades: "6", fineGrades: "15", goodGrades: "23", greatGrades: "23" },
-      { date: "10.02", negativeGrades: "5", fineGrades: "16", goodGrades: "24", greatGrades: "24" },
-      { date: "17.02", negativeGrades: "4", fineGrades: "17", goodGrades: "25", greatGrades: "25" },
-      { date: "24.02", negativeGrades: "3", fineGrades: "18", goodGrades: "26", greatGrades: "26" },
-      { date: "03.03", negativeGrades: "2", fineGrades: "19", goodGrades: "27", greatGrades: "27" },
-      { date: "10.03", negativeGrades: "2", fineGrades: "20", goodGrades: "28", greatGrades: "28" },
-      { date: "17.03", negativeGrades: "1", fineGrades: "21", goodGrades: "29", greatGrades: "29" }
-    ],
-    absences: [
-      { date: "29.09", withReason: "2", noReason: "1", metric: "90" },
-      { date: "29.09", withReason: "3", noReason: "2", metric: "80" },
-      { date: "29.09", withReason: "4", noReason: "3", metric: "70" },
-      { date: "29.09", withReason: "5", noReason: "4", metric: "60" }
-    ]
-  };
-  var studentData = {};
-  var gradeHistoryStyle = document.createElement("style");
-  gradeHistoryStyle.textContent = `
-  .chart-container {
-    position: relative;
-    height: 400px;
-    margin: 2px;
-    border: 1px solid #d9d9d6;
-  }
-  .graph-container {
-    width: 100%;
-    height: 90%;
-  }
-  .login-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    backdrop-filter: blur(2px); /* Modern browsers - blurs background */
-    z-index: 1;
-  }
-  .login-box {
-    background: white;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    width: 300px;
-    height: 200px;
-    text-align: center;
-  }
-  .spinner {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    z-index: 1;
-    width: 120px;
-    height: 120px;
-    margin: -76px 0 0 -76px;
-    border: 16px solid #f3f3f3;
-    border-radius: 50%;
-    border-top: 16px solid #3498db;
-    -webkit-animation: spin 2s linear infinite;
-    animation: spin 2s linear infinite;
-  }
-
-  @-webkit-keyframes spin {
-    0% { -webkit-transform: rotate(0deg); }
-    100% { -webkit-transform: rotate(360deg); }
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-  document.head.appendChild(gradeHistoryStyle);
-  var hash = window.location.hash;
-  var simpleMode = true;
-  var graphType = "grades";
-  var lastState = "grades";
-  async function createGradeHistory() {
-    if (hash.includes("/results") || hash.includes("/myResults")) {
-      const init = () => {
-        const mainContent = document.querySelector("#main-content");
-        const fieldSet = mainContent?.querySelector("fieldset");
-        if (mainContent && fieldSet) {
-          let elements;
-          let graph = mainContent.querySelector("#gradeHistoryGraph");
-          let loginOverlay = mainContent.querySelector("#loginOverlay");
-          if (!graph || !loginOverlay) {
-            elements = createGraphElements(fieldSet);
-            graph = elements.graph;
-            loginOverlay = elements.loginOverlay;
-          }
-          if (!manageLogin(graph, loginOverlay)) {
-            initChart(graph, exampleData);
-          }
-          return true;
-        }
-        return false;
-      };
-      if (!init()) {
-        const observer = new MutationObserver(() => {
-          if (init()) {
-            observer.disconnect();
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
-    }
-  }
-  async function gradeHistoryMain() {
-    console.log("Initializing grade history feature...");
-    await createGradeHistory();
-    if ((hash.includes("/results") || hash.includes("/myResults")) && document.querySelector("#gradeHistoryContainer")) {
-      window.location.reload();
-    }
-  }
-  gradeHistoryMain();
-  var request = { scopes: ["openid", "profile"] };
-  function manageLogin(graph, loginOverlay) {
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length === 0) {
-      loginOverlay.style.display = "flex";
-      return false;
-    }
-    msalInstance.setActiveAccount(accounts[0]);
-    const silentRequest = { ...request, account: accounts[0] };
-    msalInstance.acquireTokenSilent(silentRequest).then(async (response) => {
-      loginOverlay.style.display = "none";
-      initChart(graph, await fetchGradeHistory());
-    }).catch((error) => {
-      console.error(error);
-      loginOverlay.style.display = "flex";
-    });
-    return true;
-  }
-  function processData(data) {
-    let processedData = {
-      grades: {
-        dates: [],
-        negativeGrades: [],
-        positiveGrades: [],
-        fineGrades: [],
-        goodGrades: [],
-        greatGrades: [],
-        gradeTotal: [],
-        negativeGradesMetric: []
-      },
-      finalGrades: {
-        dates: [],
-        negativeFinalGrades: [],
-        positiveFinalGrades: [],
-        fineFinalGrades: [],
-        goodFinalGrades: [],
-        greatFinalGrades: [],
-        finalGradeTotal: [],
-        negativeFinalGradesMetric: []
-      },
-      absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] }
-    };
-    data.grades.forEach((e) => {
-      processedData.grades.dates.push(e.date);
-      processedData.grades.negativeGrades.push(e.negativeGrades);
-      processedData.grades.positiveGrades.push(+e.fineGrades + +e.goodGrades + +e.greatGrades);
-      processedData.grades.fineGrades.push(e.fineGrades);
-      processedData.grades.goodGrades.push(e.goodGrades);
-      processedData.grades.greatGrades.push(e.greatGrades);
-      processedData.grades.gradeTotal.push(+e.negativeGrades + +e.fineGrades + +e.goodGrades + +e.greatGrades);
-      processedData.grades.negativeGradesMetric.push(
-        (+e.negativeGrades * 100 / +processedData.grades.gradeTotal.slice(-1)).toFixed(0)
-      );
-    });
-    data.finalGrades.forEach((e) => {
-      processedData.finalGrades.dates.push(e.date);
-      processedData.finalGrades.negativeFinalGrades.push(e.negativeFinalGrades);
-      processedData.finalGrades.positiveFinalGrades.push(+e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades);
-      processedData.finalGrades.fineFinalGrades.push(e.fineFinalGrades);
-      processedData.finalGrades.goodFinalGrades.push(e.goodFinalGrades);
-      processedData.finalGrades.greatFinalGrades.push(e.greatFinalGrades);
-      processedData.finalGrades.finalGradeTotal.push(
-        +e.negativeFinalGrades + +e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades
-      );
-      processedData.finalGrades.negativeFinalGradesMetric.push(
-        (+e.negativeFinalGrades * 100 / +processedData.finalGrades.finalGradeTotal.slice(-1)).toFixed(0)
-      );
-    });
-    data.absences.forEach((e) => {
-      processedData.absences.dates.push(e.date);
-      processedData.absences.noReason.push(e.noReason);
-      processedData.absences.withReason.push(e.withReason);
-      processedData.absences.absencesTotal.push(+e.noReason + +e.withReason);
-      processedData.absences.lessons.push(((+e.noReason + +e.withReason) * 100 / +e.metric).toFixed(0));
-      processedData.absences.metrics.push(e.metric);
-    });
-    return processedData;
-  }
-  function graphData(data, graphType2) {
-    let datasetSimple = [
-      {
-        label: "negatiivseid hindeid",
-        data: data.grades.negativeGrades,
-        borderWidth: 2,
-        borderColor: "#eb3b5a",
-        backgroundColor: "#fc5c65",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "positiivseid hindeid",
-        data: data.grades.positiveGrades,
-        borderWidth: 2,
-        borderColor: "#20bf6b",
-        backgroundColor: "#26de81",
-        fill: true,
-        stack: "grades"
-      }
-    ];
-    let datasetAdvanced = [
-      {
-        label: "negatiivseid hindeid",
-        data: data.grades.negativeGrades,
-        borderWidth: 2,
-        borderColor: "#eb3b5a",
-        backgroundColor: "#fc5c65",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "rahuldavaid hindeid",
-        data: data.grades.fineGrades,
-        borderWidth: 2,
-        borderColor: "#fa8231",
-        backgroundColor: "#fd9644",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "h\xE4id hindeid",
-        data: data.grades.goodGrades,
-        borderWidth: 2,
-        borderColor: "#f7b731",
-        backgroundColor: "#fed330",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "suurep\xE4raseid hindeid",
-        data: data.grades.greatGrades,
-        borderWidth: 2,
-        borderColor: "#20bf6b",
-        backgroundColor: "#26de81",
-        fill: true,
-        stack: "grades"
-      }
-    ];
-    let datasetFinalSimple = [
-      {
-        label: "negatiivseid l\xF5pphindeid",
-        data: data.finalGrades.negativeFinalGrades,
-        borderWidth: 2,
-        borderColor: "#eb3b5a",
-        backgroundColor: "#fc5c65",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "positiivseid l\xF5pphindeid",
-        data: data.finalGrades.positiveFinalGrades,
-        borderWidth: 2,
-        borderColor: "#20bf6b",
-        backgroundColor: "#26de81",
-        fill: true,
-        stack: "grades"
-      }
-    ];
-    let datasetFinalAdvanced = [
-      {
-        label: "negatiivseid l\xF5pphindeid",
-        data: data.finalGrades.negativeFinalGrades,
-        borderWidth: 2,
-        borderColor: "#eb3b5a",
-        backgroundColor: "#fc5c65",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "rahuldavaid l\xF5pphindeid",
-        data: data.finalGrades.fineFinalGrades,
-        borderWidth: 2,
-        borderColor: "#fa8231",
-        backgroundColor: "#fd9644",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "h\xE4id l\xF5pphindeid",
-        data: data.finalGrades.goodFinalGrades,
-        borderWidth: 2,
-        borderColor: "#f7b731",
-        backgroundColor: "#fed330",
-        fill: true,
-        stack: "grades"
-      },
-      {
-        label: "suurep\xE4raseid l\xF5pphindeid",
-        data: data.finalGrades.greatFinalGrades,
-        borderWidth: 2,
-        borderColor: "#20bf6b",
-        backgroundColor: "#26de81",
-        fill: true,
-        stack: "grades"
-      }
-    ];
-    if (graphType2 == "grades") {
-      return {
-        labels: data.grades.dates,
-        datasets: [
-          ...simpleMode ? datasetSimple : datasetAdvanced,
-          { label: "hindeid kokku", data: data.grades.gradeTotal, borderColor: "#4b6584", backgroundColor: "#778ca3" }
-        ]
-      };
-    } else if (graphType2 == "finalGrades") {
-      return {
-        labels: data.finalGrades.dates,
-        datasets: [
-          ...simpleMode ? datasetFinalSimple : datasetFinalAdvanced,
-          {
-            label: "l\xF5pphindeid kokku",
-            data: data.finalGrades.finalGradeTotal,
-            borderColor: "#4b6584",
-            backgroundColor: "#778ca3"
-          }
-        ]
-      };
-    } else if (graphType2 == "absences") {
-      return {
-        labels: data.absences.dates,
-        datasets: [
-          {
-            label: "p\xF5hjuseta puudumised",
-            data: data.absences.noReason,
-            borderWidth: 2,
-            borderColor: "#a5b1c2",
-            backgroundColor: "#d1d8e0",
-            fill: true,
-            stack: "absences"
-          },
-          {
-            label: "p\xF5hjusega puudumised",
-            data: data.absences.withReason,
-            borderWidth: 2,
-            borderColor: "#3867d6",
-            backgroundColor: "#4b7bec",
-            fill: true,
-            stack: "absences"
-          },
-          {
-            label: "puudumisi kokku",
-            data: data.absences.absencesTotal,
-            borderColor: "#2d98da",
-            backgroundColor: "#45aaf2",
-            fill: true,
-            stack: "none"
-          },
-          {
-            label: "tunde kokku",
-            data: data.absences.lessons,
-            borderColor: "#4b6584",
-            backgroundColor: "#778ca3",
-            fill: true
-          }
-        ]
-      };
-    }
-  }
-  function graphControllsFunction(button) {
-    let tempLastState = "";
-    if (["graphDataBtn", "graphFinalDataBtn"].includes(button)) {
-      tempLastState = graphType;
-    }
-    switch (button) {
-      case "graphDataBtn":
-        console.log("last state:", lastState);
-        graphType = ["grades", "finalGrades"].includes(graphType) ? "absences" : lastState;
-        break;
-      case "graphFinalDataBtn":
-        graphType = graphType === "finalGrades" ? "grades" : "finalGrades";
-        break;
-      case "graphModeBtn":
-        simpleMode = !simpleMode;
-        break;
-    }
-    lastState = tempLastState;
-    let graphDataBtn = document.querySelector("#graphDataBtn");
-    graphDataBtn.text = graphType === "grades" || graphType === "finalGrades" ? "Puudumiste vaade" : "Hinnete vaade";
-    let graphFinalDataBtn = document.querySelector("#graphFinalDataBtn");
-    graphFinalDataBtn.text = graphType === "finalGrades" ? "Hinnete vaade" : "L\xF5pphindete vaade";
-    graphFinalDataBtn.style.display = graphType === "absences" ? "none" : "inline-block";
-    let graphModeBtn = document.querySelector("#graphModeBtn");
-    graphModeBtn.text = simpleMode ? "T\xE4iustatud vaade" : "Lihtne vaade";
-    graphModeBtn.style.display = graphType === "absences" ? "none" : "inline-block";
-    createGradeHistory();
-  }
-  function createGraphElements(previousElement) {
-    const gradeHistory = document.createElement("fieldset");
-    gradeHistory.id = "gradeHistoryContainer";
-    gradeHistory.className = "chart-container";
-    const gradeHistoryLegend = document.createElement("legend");
-    gradeHistoryLegend.textContent = "Ajalugu";
-    gradeHistory.appendChild(gradeHistoryLegend);
-    const loginOverlay = document.createElement("div");
-    loginOverlay.id = "loginOverlay";
-    loginOverlay.className = "login-overlay";
-    loginOverlay.style.display = "none";
-    const loadingOverlay = document.createElement("div");
-    loadingOverlay.id = "loadingOverlay";
-    loadingOverlay.className = "login-overlay";
-    loadingOverlay.style.display = "none";
-    const graphContainer = document.createElement("div");
-    graphContainer.id = "graphContainer";
-    graphContainer.className = "graph-container";
-    const graphControlls = document.createElement("div");
-    const graphDataBtn = document.createElement("a");
-    graphDataBtn.id = "graphDataBtn";
-    graphDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
-    graphDataBtn.text = "Puudumiste vaade";
-    const graphFinalDataBtn = document.createElement("a");
-    graphFinalDataBtn.id = "graphFinalDataBtn";
-    graphFinalDataBtn.className = "md-raised md-primary md-button md-ink-ripple";
-    graphFinalDataBtn.text = "L\xF5pphindete vaade";
-    const graphModeBtn = document.createElement("a");
-    graphModeBtn.id = "graphModeBtn";
-    graphModeBtn.className = "md-raised md-secondary md-button md-ink-ripple";
-    graphModeBtn.text = "T\xE4iustatud vaade";
-    graphDataBtn.addEventListener("click", () => {
-      graphControllsFunction("graphDataBtn");
-    });
-    graphFinalDataBtn.addEventListener("click", () => {
-      graphControllsFunction("graphFinalDataBtn");
-    });
-    graphModeBtn.addEventListener("click", () => {
-      graphControllsFunction("graphModeBtn");
-    });
-    graphControlls.appendChild(graphDataBtn);
-    graphControlls.appendChild(graphFinalDataBtn);
-    graphControlls.appendChild(graphModeBtn);
-    const graph = document.createElement("canvas");
-    graph.id = "gradeHistoryGraph";
-    graph.height = "100%";
-    graph.width = "100%";
-    graph.style.margin = "2px";
-    const loginContent = document.createElement("div");
-    loginContent.id = "loginContent";
-    loginContent.className = "login-box";
-    const loginText = document.createElement("h1");
-    loginText.textContent = "Logi sisse hinnete ajaloo n\xE4gemiseks";
-    const loginBtn = document.createElement("a");
-    loginBtn.id = "loginBtn";
-    loginBtn.className = "md-raised md-primary md-button md-ink-ripple";
-    loginBtn.text = "Logi sisse";
-    loginBtn.addEventListener("click", () => {
-      msalInstance.loginPopup({ scopes: ["user.read"] }).then((response) => {
-        manageLogin(graph, loginOverlay);
-      }).catch((error) => {
-        alert("Login failed: " + error);
-      });
-    });
-    loginContent.appendChild(loginText);
-    loginContent.appendChild(loginBtn);
-    const loadingSpinner = document.createElement("div");
-    loadingSpinner.id = "spinner";
-    loadingSpinner.className = "spinner";
-    graphContainer.appendChild(graphControlls);
-    graphContainer.appendChild(graph);
-    loginOverlay.appendChild(loginContent);
-    loadingOverlay.appendChild(loadingSpinner);
-    gradeHistory.appendChild(graphContainer);
-    gradeHistory.appendChild(loginOverlay);
-    gradeHistory.appendChild(loadingOverlay);
-    previousElement.after(gradeHistory);
-    return { graph, loginOverlay, graphContainer, loadingOverlay };
-  }
-  function initChart(graph, data) {
-    let processedData = processData(data, simpleMode);
-    let myChart = Chart.getChart(graph);
-    if (!myChart) {
-      myChart = new Chart(graph, {
-        type: "line",
-        data: graphData(processedData, graphType),
-        options: {
-          plugins: {
-            tooltip: {
-              mode: "index",
-              intersect: false,
-              callbacks: {
-                label: function(context) {
-                  let label = context.dataset.label || "";
-                  if (label && label === "puudumisi kokku") {
-                    return label + ": " + context.parsed.y + " | " + processedData.absences.metrics[context.dataIndex] + "%";
-                  }
-                  if (label && label === "negatiivseid hindeid") {
-                    return label + ": " + context.parsed.y + " | " + processedData.grades.negativeGradesMetric[context.dataIndex] + "%";
-                  }
-                  if (label && label === "negatiivseid l\xF5pphindeid") {
-                    return label + ": " + context.parsed.y + " | " + processedData.finalGrades.negativeFinalGradesMetric[context.dataIndex] + "%";
-                  }
-                  return label + ": " + context.parsed.y;
-                }
-              }
-            },
-            legend: {
-              labels: {
-                filter: (legendItem) => legendItem.text !== "hindeid kokku" && legendItem.text !== "puudumisi kokku" && legendItem.text !== "l\xF5pphindeid kokku"
-              }
-            }
-          },
-          scales: { y: { stacked: true, beginAtZero: true } }
-        }
-      });
-      return;
-    }
-    myChart.data = graphData(processedData, graphType);
-    myChart.update();
-  }
-  async function fetchGradeHistory() {
-    try {
-      const studentId = await getStudentId();
-      if (studentData && studentData[studentId]) {
-        return studentData[studentId];
-      }
-      const accounts = msalInstance.getAllAccounts();
-      if (accounts.length === 0) {
-        throw new Error("No authenticated user found");
-      }
-      const loadingOverlay = document.querySelector("#loadingOverlay");
-      loadingOverlay.style.display = "inline-block";
-      const tokenRequest = {
-        scopes: [MSAL_CLIENT_ID + "/.default"],
-        // Your API scopes here
-        account: accounts[0]
-        // Use the active or desired account
-      };
-      const response = await msalInstance.acquireTokenSilent(tokenRequest);
-      const accessToken = response.accessToken;
-      const apiResponse = await fetch(SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
-      }).then((res) => res.json());
-      studentData[studentId] = apiResponse;
-      loadingOverlay.style.display = "none";
-      return apiResponse;
-    } catch (error) {
-      console.error("Error during fetchWithToken:", error);
-      throw error;
-    }
-  }
-  function getStudentId() {
-    let id = null;
-    const url = window.location.href;
-    const match = url.match(/\/students\/(\d+)/);
-    id = match ? match[1] : null;
-    if (!id) {
-      id = fetch("https://tahvel.edu.ee/hois_back/user", {
-        method: "GET",
-        credentials: "include",
-        headers: { accept: "application/json, text/plain, */*" }
-      }).then((res) => res.json()).then((data) => data.student);
-    }
-    return id;
   }
 })();
