@@ -49,18 +49,14 @@ export class Authentication extends Msal {
       return null;
     }
 
-    if (!this.#msalToken) {
-      try {
-        const response = await this.msalInstance.acquireTokenSilent(silentRequest);
-        this.#msalToken = response.accessToken;
-      }
-      catch (error) {
-        console.error('Silent token acquisition failed. Acquiring token using popup', error);
-        return null;
-      }
-    };
-
-    return this.#msalToken;
+    try {
+      const response = await this.msalInstance.acquireTokenSilent(silentRequest);
+      return await response.accessToken;
+    }
+    catch (error) {
+      console.error('Silent token acquisition failed: ', error);
+      return null;
+    }
   };
 };
 

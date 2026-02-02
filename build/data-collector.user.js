@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Data collector
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Student data collector for Tahvel.
 // @author       Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -106,17 +106,13 @@
       if (!this.checkAuth()) {
         return null;
       }
-      if (!this.#msalToken) {
-        try {
-          const response = await this.msalInstance.acquireTokenSilent(silentRequest);
-          this.#msalToken = response.accessToken;
-        } catch (error) {
-          console.error("Silent token acquisition failed. Acquiring token using popup", error);
-          return null;
-        }
+      try {
+        const response = await this.msalInstance.acquireTokenSilent(silentRequest);
+        return await response.accessToken;
+      } catch (error) {
+        console.error("Silent token acquisition failed: ", error);
+        return null;
       }
-      ;
-      return this.#msalToken;
     }
   };
 
