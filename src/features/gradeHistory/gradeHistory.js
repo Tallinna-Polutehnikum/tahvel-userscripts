@@ -54,7 +54,7 @@ export async function gradeHistory() {
       });
   });
 
-  components.toggleLoading();
+  components.showLoading();
 
   if (!manageLogin()) {
     manageChart(components.graphComponent, processData(exampleData));
@@ -62,7 +62,7 @@ export async function gradeHistory() {
     manageChart(components.graphComponent, await fetchGradeHistory());
   }
 
-  components.toggleLoading();
+  components.hideLoading();
 
   console.log('Grade history feature initialized.');
 };
@@ -70,15 +70,11 @@ export async function gradeHistory() {
 // -------------LOGIN MANAGEMENT-------------
 function manageLogin() {
   if (!auth.checkAuth()) {
-    if (!components.isLoginVisible) {
-      components.toggleLogin();
-    }
+    components.showLogin();
     return false;
   }
 
-  if (components.isLoginVisible) {
-    components.toggleLogin();
-  }
+  components.hideLogin();
   return true;
 };
 
@@ -121,6 +117,9 @@ function createGraphElements(previousElement) {
   });
 
   ui.querySelector('#graph-login-btn').addEventListener('click', async () => {
+    components.showLoading();
+    components.hideLogin();
+    
     let loginResult = await auth.login();
 
     if (loginResult) {
@@ -130,6 +129,8 @@ function createGraphElements(previousElement) {
         manageChart(components.graphComponent, await fetchGradeHistory());
       }
     }
+
+    components.hideLoading();
   });
 
   return { graph, loginOverlay, loadingOverlay };

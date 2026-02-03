@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Data collector
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Student data collector for Tahvel.
 // @author       Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -76,7 +76,6 @@
   // src/auth/authentication.js
   var Authentication = class extends Msal {
     #accounts = [];
-    #msalToken = null;
     constructor() {
       super();
       this.init();
@@ -95,11 +94,15 @@
       return true;
     }
     checkAuth() {
-      if (this.#accounts.length === 0) {
+      if (this.#accounts.length === 0) return false;
+      this.msalInstance.setActiveAccount(this.#accounts[0]);
+      try {
+        this.msalInstance.acquireTokenSilent({ scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] });
+        return true;
+      } catch (error) {
+        console.error("Token acquisition failed: ", error);
         return false;
       }
-      this.msalInstance.setActiveAccount(this.#accounts[0]);
-      return true;
     }
     async getToken() {
       const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };

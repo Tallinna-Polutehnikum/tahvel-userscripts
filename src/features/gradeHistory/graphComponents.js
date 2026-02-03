@@ -29,13 +29,23 @@ export class GraphComponents {
     return this.#isLoadingVisible;
   }
 
-  toggleLogin() {
-    this.#isLoginVisible = !this.#isLoginVisible;
-    this.#login.style.display = this.#isLoginVisible ? "flex" : "none";
+  showLogin() {
+    this.#isLoginVisible = true;
+    this.#login.style.display = "flex";
   }
 
-  toggleLoading() {
-    this.#isLoadingVisible = !this.#isLoadingVisible;
-    this.#loading.style.display = this.#isLoadingVisible ? "flex" : "none";
+  hideLogin() {
+    this.#isLoginVisible = false;
+    this.#login.style.display = "none";
+  }
+
+  showLoading() {
+    this.#isLoadingVisible = true;
+    this.#loading.style.display = "flex";
+  }
+
+  hideLoading() {
+    this.#isLoadingVisible = false;
+    this.#loading.style.display = "none";
   }
 };

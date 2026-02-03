@@ -3,7 +3,6 @@ import * as env from 'env';
 
 export class Authentication extends Msal {
   #accounts = [];
-  #msalToken = null;
 
   constructor() {
     super();
@@ -33,13 +32,17 @@ export class Authentication extends Msal {
   }
 
   checkAuth() {
-    if (this.#accounts.length === 0) {
-      return false;
-    }
+    if (this.#accounts.length === 0) return false;
 
     this.msalInstance.setActiveAccount(this.#accounts[0]);
 
-    return true;
+    try {
+      this.msalInstance.acquireTokenSilent({ scopes: [env.MSAL_CLIENT_ID + '/.default'], account: this.#accounts[0] });
+      return true;
+    } catch (error) {
+      console.error('Token acquisition failed: ', error);
+      return false;
+    }
   };
 
   async getToken() {

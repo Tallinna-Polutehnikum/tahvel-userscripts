@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.5.4
+// @version      1.5.5
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -24,7 +24,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.5.4";
+  var version = "1.5.5";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
@@ -185,7 +185,6 @@
   // src/auth/authentication.js
   var Authentication = class extends Msal {
     #accounts = [];
-    #msalToken = null;
     constructor() {
       super();
       this.init();
@@ -204,11 +203,15 @@
       return true;
     }
     checkAuth() {
-      if (this.#accounts.length === 0) {
+      if (this.#accounts.length === 0) return false;
+      this.msalInstance.setActiveAccount(this.#accounts[0]);
+      try {
+        this.msalInstance.acquireTokenSilent({ scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] });
+        return true;
+      } catch (error) {
+        console.error("Token acquisition failed: ", error);
         return false;
       }
-      this.msalInstance.setActiveAccount(this.#accounts[0]);
-      return true;
     }
     async getToken() {
       const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
@@ -250,13 +253,21 @@
     get isLoadingVisible() {
       return this.#isLoadingVisible;
     }
-    toggleLogin() {
-      this.#isLoginVisible = !this.#isLoginVisible;
-      this.#login.style.display = this.#isLoginVisible ? "flex" : "none";
+    showLogin() {
+      this.#isLoginVisible = true;
+      this.#login.style.display = "flex";
     }
-    toggleLoading() {
-      this.#isLoadingVisible = !this.#isLoadingVisible;
-      this.#loading.style.display = this.#isLoadingVisible ? "flex" : "none";
+    hideLogin() {
+      this.#isLoginVisible = false;
+      this.#login.style.display = "none";
+    }
+    showLoading() {
+      this.#isLoadingVisible = true;
+      this.#loading.style.display = "flex";
+    }
+    hideLoading() {
+      this.#isLoadingVisible = false;
+      this.#loading.style.display = "none";
     }
   };
 
@@ -387,25 +398,21 @@
         loading: elements.loadingOverlay
       });
     });
-    components.toggleLoading();
+    components.showLoading();
     if (!manageLogin()) {
       manageChart(components.graphComponent, processData(exampleData));
     } else {
       manageChart(components.graphComponent, await fetchGradeHistory());
     }
-    components.toggleLoading();
+    components.hideLoading();
     console.log("Grade history feature initialized.");
   }
   function manageLogin() {
     if (!auth.checkAuth()) {
-      if (!components.isLoginVisible) {
-        components.toggleLogin();
-      }
+      components.showLogin();
       return false;
     }
-    if (components.isLoginVisible) {
-      components.toggleLogin();
-    }
+    components.hideLogin();
     return true;
   }
   async function getGraphElements() {
@@ -438,6 +445,8 @@
       graphControllsFunction("graph-mode-btn");
     });
     ui.querySelector("#graph-login-btn").addEventListener("click", async () => {
+      components.showLoading();
+      components.hideLogin();
       let loginResult = await auth.login();
       if (loginResult) {
         if (!manageLogin()) {
@@ -446,6 +455,7 @@
           manageChart(components.graphComponent, await fetchGradeHistory());
         }
       }
+      components.hideLoading();
     });
     return { graph, loginOverlay, loadingOverlay };
   }
