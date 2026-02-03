@@ -107,6 +107,7 @@
     async getToken() {
       const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
       if (!this.checkAuth()) {
+        this.login();
         return null;
       }
       try {
@@ -114,6 +115,7 @@
         return await response.accessToken;
       } catch (error) {
         console.error("Silent token acquisition failed: ", error);
+        this.login();
         return null;
       }
     }

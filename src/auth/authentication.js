@@ -49,6 +49,7 @@ export class Authentication extends Msal {
     const silentRequest = { scopes: [env.MSAL_CLIENT_ID + '/.default'], account: this.#accounts[0] };
 
     if (!this.checkAuth()) {
+      this.login();
       return null;
     }
 
@@ -58,6 +59,7 @@ export class Authentication extends Msal {
     }
     catch (error) {
       console.error('Silent token acquisition failed: ', error);
+      this.login();
       return null;
     }
   };
