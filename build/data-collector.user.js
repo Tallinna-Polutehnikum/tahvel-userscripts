@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Data collector
 // @namespace    https://tahvel.edu.ee/
-// @version      1.0.3
+// @version      1.0.6
 // @description  Student data collector for Tahvel.
 // @author       Sven Laht
 // @match        https://tahvel.edu.ee/*

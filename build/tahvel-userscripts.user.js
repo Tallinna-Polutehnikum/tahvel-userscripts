@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.5.5
+// @version      1.5.6
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -24,7 +24,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.5.5";
+  var version = "1.5.6";
 
   // src/features/usageLogger.js
   setTimeout(async () => {
