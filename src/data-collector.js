@@ -1,2 +1,3 @@
-import './features/randomRequest.js';
-import './features/studentData.js';
+import './modules/randomRequest.js';
+import './modules/studentData.js';
+

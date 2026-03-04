@@ -1,7 +1,8 @@
-import './features/randomRequest.js';
-import './features/usageLogger.js';
-import './features/teachers.js';
-import './features/gradeHistory/gradeHistory.js';
+import './modules/randomRequest.js';
+import './modules/usageLogger.js';
+import './modules/teachers.js';
+import './modules/gradeHistory/gradeHistory.js';
+import './modules/reports/stipend-eligibility/windowApi.js';
 
 // Teachers.js
 /**
