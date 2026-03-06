@@ -17,6 +17,7 @@ Student-level:
 - totalPeriodGrades (entryType SISSEKANNE_R)
 - totalFinalGrades (entryType SISSEKANNE_L)
 - negativePeriodGrades, negativeFinalGrades
+- totalMissingPeriodGrades, totalMissingFinalGrades
 - problematicSubjects list where missing period/final applies
 
 Subject-level:
@@ -38,6 +39,14 @@ If a student has a positive (non-negative) final grade (SISSEKANNE_L) in a journ
 - Missing FINAL or PERIOD is only flagged for a student if:
   1. That journal has at least one corresponding grade (final/period) for ANY student in the GROUP, AND
   2. The student has at least one entry (any entry type) in that journal, meaning they are actively enrolled/participating in it.
+- Missing PERIOD is additionally ignored when the student already has a final grade in that journal.
+
+### Optional cutoff-date suppression for new-semester activity
+Use aggregation option `missingGradeCutoffDate` (ISO date like `2026-09-01`) to suppress false positives at semester start:
+- If a student has regular entries after cutoff (default regular types: `SISSEKANNE_H/T/P/E/I/O`),
+- and the journal has no corresponding final/period grades after that cutoff yet,
+- then missing final/period is not flagged for that student in that journal.
+- Optional: override regular types with `regularEntryTypesAfterCutoff: ["SISSEKANNE_H", ...]`.
 
 ### Enrollment participation check
 Tahvel's group report includes students for ALL journals in the curriculum, even journals they don't take. Journals a student doesn't participate in have `results: []` (zero entries). These students are **not** flagged as `missingFinal` or `missingPeriod` — the flags only apply to students actively enrolled in the journal.
@@ -53,6 +62,7 @@ Columns (tab-separated):
 groupCode, fullname, status, weightedAverageGrade, lessonAbsencePercentage,
 totalGrades, totalPeriodGrades, totalFinalGrades,
 negativePeriodGrades, negativeFinalGrades,
+missingPeriodGradeCount, missingFinalGradeCount,
 missingPeriodSubjects, missingFinalSubjects,
 problemSubjects (semicolon list Subject|Teacher|flags),
 exceptionCandidate (true/false)
@@ -77,7 +87,10 @@ if (!resolved.exactMatchFound) {
 var state = await window.reports.stipend.buildStateForGroup(groupCode, {
   studentGroup: resolved.studentGroup,
   curriculumVersion: resolved.curriculumVersion,
-  from: "2025-08-01T00:00:00.000Z"
+  from: "2025-08-01T00:00:00.000Z",
+  aggregationOptions: {
+    missingGradeCutoffDate: "2026-09-01"
+  }
 });
 
 // 3) Export TSV
@@ -96,6 +109,9 @@ var result = await window.reports.stipend.aggregateAndExportAllGroups({
   },
   reportOptions: {
     from: "2025-08-01T00:00:00.000Z"
+  },
+  aggregationOptions: {
+    missingGradeCutoffDate: "2026-09-01"
   },
   concurrency: 4
 });
@@ -193,16 +209,17 @@ These are short versions meant for quick repeated pasting in browser console.
 #### Single group (minimal)
 
 ```js
-var r = await window.reports.stipend.resolveGroupReportParams("TA-25A");
-var s = await window.reports.stipend.buildStateForGroup("TA-25A", { studentGroup: r.studentGroup, curriculumVersion: r.curriculumVersion, from: "2025-08-01T00:00:00.000Z" });
+var r = await window.reports.stipend.resolveGroupReportParams("IT-24A");
+var s = await window.reports.stipend.buildStateForGroup("IT-24A", { studentGroup: r.studentGroup, curriculumVersion: r.curriculumVersion, from: "2020-08-01T00:00:00.000Z", aggregationOptions: { missingGradeCutoffDate: "2026-01-25"} });
 var t = window.reports.stipend.exportStudentReportTsv(s);
-console.log(s, t);
+var problems = window.reports.stipend.exportSubjectReportTsv(s);
+console.log(s, t, problems);
 ```
 
 #### Bulk all groups (minimal)
 
 ```js
-var b = await window.reports.stipend.aggregateAndExportAllGroups({ reportOptions: { from: "2025-08-01T00:00:00.000Z" } });
+var b = await window.reports.stipend.aggregateAndExportAllGroups({ reportOptions: { from: "2020-08-01T00:00:00.000Z" }, aggregationOptions: { missingGradeCutoffDate: "2026-01-25"} });
 console.log(b.summary, b.unresolved, b.fetchErrors);
 console.log(b.state, b.tsv);
 ```
@@ -214,4 +231,3 @@ var x = window.reports.stipend.loadSnapshotFromLocalStorage();
 var t = x?.state ? window.reports.stipend.exportStudentReportTsv(x.state) : "";
 console.log(x?.summary, t);
 ```
-

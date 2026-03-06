@@ -5,8 +5,48 @@ const NEGATIVE = new Set([
   "KUTSEHINDAMINE_2"
 ]);
 
+const DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF = new Set([
+  "SISSEKANNE_H",
+  "SISSEKANNE_T",
+  "SISSEKANNE_P",
+  "SISSEKANNE_E",
+  "SISSEKANNE_I",
+  "SISSEKANNE_O"
+]);
+
 function isNegative(code) {
   return code ? NEGATIVE.has(code) : false;
+}
+
+function normalizeDateOnly(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return s.length >= 10 ? s.slice(0, 10) : null;
+}
+
+function normalizeEntryTypeSet(value) {
+  if (!Array.isArray(value) || value.length === 0) return DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF;
+
+  const out = new Set();
+  for (const t of value) {
+    const normalized = String(t ?? "").trim().toUpperCase();
+    if (normalized) out.add(normalized);
+  }
+
+  return out.size > 0 ? out : DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF;
+}
+
+function hasRegularActivityAfterCutoff(entries, cutoffDate, regularEntryTypeSet) {
+  if (!cutoffDate || !Array.isArray(entries) || entries.length === 0) return false;
+
+  for (const e of entries) {
+    const entryDate = normalizeDateOnly(e?.entryDate);
+    if (!entryDate || entryDate < cutoffDate) continue;
+    if (regularEntryTypeSet.has(String(e?.entryType ?? "").toUpperCase())) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -32,24 +72,51 @@ export function createEmptyState() {
  * Heuristic for multi-semester subjects:
  * - Missing FINAL (SISSEKANNE_L) is only flagged if this journal has at least one final grade
  *   for any student in the group (journalHasFinal == true).
- * - Missing PERIOD (SISSEKANNE_R) is only flagged if journalHasPeriod == true.
+ * - Missing PERIOD (SISSEKANNE_R) is only flagged if journalHasPeriod == true
+ *   AND student does not already have a final grade in the same journal.
+ * - Optional cutoff-date suppression can skip missing flags for journals that show
+ *   post-cutoff regular activity but no post-cutoff period/final conclusions yet.
  *
  * That prevents “not yet graded this semester” from becoming “problem”.
  */
-export function aggregateGroup(normalizedGroup, state, { logger = console.warn } = {}) {
+export function aggregateGroup(
+  normalizedGroup,
+  state,
+  {
+    logger = console.warn,
+    missingGradeCutoffDate = null,
+    regularEntryTypesAfterCutoff = null
+  } = {}
+) {
   const groupCode = normalizedGroup.groupCode;
   if (!state.groups[groupCode]) state.groups[groupCode] = [];
+  const cutoffDate = normalizeDateOnly(missingGradeCutoffDate);
+  const regularEntryTypeSet = normalizeEntryTypeSet(regularEntryTypesAfterCutoff);
 
   // Pass 1: detect whether each journal has any final/period grades in this group
   const journalHasFinal = Object.create(null);  // journalId -> boolean
   const journalHasPeriod = Object.create(null); // journalId -> boolean
+  const journalHasFinalAfterCutoff = Object.create(null);  // journalId -> boolean
+  const journalHasPeriodAfterCutoff = Object.create(null); // journalId -> boolean
 
   for (const s of normalizedGroup.students) {
     for (const j of Object.values(s.journalsById)) {
       for (const e of j.entries) {
         if (!e.gradeCode) continue;
-        if (e.entryType === "SISSEKANNE_L") journalHasFinal[j.journalId] = true;
-        if (e.entryType === "SISSEKANNE_R") journalHasPeriod[j.journalId] = true;
+        if (e.entryType === "SISSEKANNE_L") {
+          journalHasFinal[j.journalId] = true;
+          if (cutoffDate) {
+            const entryDate = normalizeDateOnly(e.entryDate);
+            if (entryDate && entryDate >= cutoffDate) journalHasFinalAfterCutoff[j.journalId] = true;
+          }
+        }
+        if (e.entryType === "SISSEKANNE_R") {
+          journalHasPeriod[j.journalId] = true;
+          if (cutoffDate) {
+            const entryDate = normalizeDateOnly(e.entryDate);
+            if (entryDate && entryDate >= cutoffDate) journalHasPeriodAfterCutoff[j.journalId] = true;
+          }
+        }
       }
     }
   }
@@ -57,6 +124,7 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
   // Pass 2: build stats
   for (const s of normalizedGroup.students) {
     const studentStats = {
+      id: s.studentId,
       fullname: s.fullname,
       groupCode,
       status: s.status,
@@ -65,6 +133,8 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
       totalPeriodGrades: 0,
       totalNegativeFinalGrades: 0,
       totalNegativePeriodGrades: 0,
+      totalMissingFinalGrades: 0,
+      totalMissingPeriodGrades: 0,
       weightedAverageGrade: s.weightedAverageGrade ?? null,
       lessonAbsencePercentage: s.lessonAbsencePercentage ?? null,
       problematicSubjects: [],
@@ -90,6 +160,7 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
           firstEntryDate: null,
           lastEntryDate: null,
           teachers: new Set(),
+          groupCodes: new Set(),
           studentsWithAnyGrade: 0,
           studentsWithFinal: 0,
           studentsWithNegativeFinal: 0,
@@ -100,6 +171,7 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
       }
 
       const subj = state.subjectStatMap[key];
+      subj.groupCodes.add(groupCode);
       subj.totalStudentsInSubject += 1;
 
       // per-student flags within this subject
@@ -177,12 +249,30 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
       if (studentHasFinal) subj.studentsWithFinal += 1;
       if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
 
-      const shouldConsiderFinalMissing = journalHasFinal[journalId] === true;
-      if (shouldConsiderFinalMissing && studentHasAnyGradeInSubject && !studentHasFinal) subj.studentsMissingFinal += 1;
+      const hasRegularAfterCutoff = hasRegularActivityAfterCutoff(j.entries, cutoffDate, regularEntryTypeSet);
+      const suppressMissingFinalByCutoff =
+        hasRegularAfterCutoff && journalHasFinalAfterCutoff[journalId] !== true;
+      const suppressMissingPeriodByCutoff =
+        hasRegularAfterCutoff && journalHasPeriodAfterCutoff[journalId] !== true;
 
       // Decide if “missing” should be flagged using group-level heuristic:
-      const shouldFlagPeriod = journalHasPeriod[journalId] === true && studentHasAnyGradeInSubject && !studentHasPeriod;
-      const shouldFlagFinal = journalHasFinal[journalId] === true && studentHasAnyGradeInSubject && !studentHasFinal;
+      const shouldFlagPeriod =
+        journalHasPeriod[journalId] === true &&
+        studentHasAnyGradeInSubject &&
+        !studentHasPeriod &&
+        !studentHasFinal &&
+        !suppressMissingPeriodByCutoff;
+      const shouldFlagFinal =
+        journalHasFinal[journalId] === true &&
+        studentHasAnyGradeInSubject &&
+        !studentHasFinal &&
+        !suppressMissingFinalByCutoff;
+
+      if (shouldFlagPeriod) studentStats.totalMissingPeriodGrades += 1;
+      if (shouldFlagFinal) {
+        subj.studentsMissingFinal += 1;
+        studentStats.totalMissingFinalGrades += 1;
+      }
 
       if (shouldFlagPeriod || shouldFlagFinal) {
         const teacherGuess = [...j.entries].reverse().find(x => x.teacher)?.teacher ?? "";
@@ -213,8 +303,9 @@ export function finalizeState(state) {
   for (const k of Object.keys(state.subjectStatMap)) {
     const subj = state.subjectStatMap[k];
 
-    // normalize teachers representation
+    // normalize teachers and groupCodes representation
     if (subj.teachers instanceof Set) subj.teachers = [...subj.teachers].sort();
+    if (subj.groupCodes instanceof Set) subj.groupCodes = [...subj.groupCodes].sort((a, b) => a.localeCompare(b, "et"));
 
     const total = subj.totalStudentsInSubject || 0;
     if (!total) continue;

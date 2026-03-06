@@ -2031,8 +2031,40 @@
     "KUTSEHINDAMINE_1",
     "KUTSEHINDAMINE_2"
   ]);
+  var DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF = /* @__PURE__ */ new Set([
+    "SISSEKANNE_H",
+    "SISSEKANNE_T",
+    "SISSEKANNE_P",
+    "SISSEKANNE_E",
+    "SISSEKANNE_I",
+    "SISSEKANNE_O"
+  ]);
   function isNegative(code) {
     return code ? NEGATIVE.has(code) : false;
+  }
+  function normalizeDateOnly(value) {
+    if (value == null) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    return s.length >= 10 ? s.slice(0, 10) : null;
+  }
+  function normalizeEntryTypeSet(value) {
+    if (!Array.isArray(value) || value.length === 0) return DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF;
+    const out = /* @__PURE__ */ new Set();
+    for (const t of value) {
+      const normalized = String(t ?? "").trim().toUpperCase();
+      if (normalized) out.add(normalized);
+    }
+    return out.size > 0 ? out : DEFAULT_REGULAR_ENTRY_TYPES_AFTER_CUTOFF;
+  }
+  function hasRegularActivityAfterCutoff(entries, cutoffDate, regularEntryTypeSet) {
+    if (!cutoffDate || !Array.isArray(entries) || entries.length === 0) return false;
+    for (const e of entries) {
+      const entryDate = normalizeDateOnly(e?.entryDate);
+      if (!entryDate || entryDate < cutoffDate) continue;
+      if (regularEntryTypeSet.has(String(e?.entryType ?? "").toUpperCase())) return true;
+    }
+    return false;
   }
   function warn(logger, msg, payload) {
     if (!logger) return;
@@ -2053,22 +2085,43 @@
       // Set<string journalId>
     };
   }
-  function aggregateGroup(normalizedGroup, state, { logger = console.warn } = {}) {
+  function aggregateGroup(normalizedGroup, state, {
+    logger = console.warn,
+    missingGradeCutoffDate = null,
+    regularEntryTypesAfterCutoff = null
+  } = {}) {
     const groupCode = normalizedGroup.groupCode;
     if (!state.groups[groupCode]) state.groups[groupCode] = [];
+    const cutoffDate = normalizeDateOnly(missingGradeCutoffDate);
+    const regularEntryTypeSet = normalizeEntryTypeSet(regularEntryTypesAfterCutoff);
     const journalHasFinal = /* @__PURE__ */ Object.create(null);
     const journalHasPeriod = /* @__PURE__ */ Object.create(null);
+    const journalHasFinalAfterCutoff = /* @__PURE__ */ Object.create(null);
+    const journalHasPeriodAfterCutoff = /* @__PURE__ */ Object.create(null);
     for (const s of normalizedGroup.students) {
       for (const j of Object.values(s.journalsById)) {
         for (const e of j.entries) {
           if (!e.gradeCode) continue;
-          if (e.entryType === "SISSEKANNE_L") journalHasFinal[j.journalId] = true;
-          if (e.entryType === "SISSEKANNE_R") journalHasPeriod[j.journalId] = true;
+          if (e.entryType === "SISSEKANNE_L") {
+            journalHasFinal[j.journalId] = true;
+            if (cutoffDate) {
+              const entryDate = normalizeDateOnly(e.entryDate);
+              if (entryDate && entryDate >= cutoffDate) journalHasFinalAfterCutoff[j.journalId] = true;
+            }
+          }
+          if (e.entryType === "SISSEKANNE_R") {
+            journalHasPeriod[j.journalId] = true;
+            if (cutoffDate) {
+              const entryDate = normalizeDateOnly(e.entryDate);
+              if (entryDate && entryDate >= cutoffDate) journalHasPeriodAfterCutoff[j.journalId] = true;
+            }
+          }
         }
       }
     }
     for (const s of normalizedGroup.students) {
       const studentStats = {
+        id: s.studentId,
         fullname: s.fullname,
         groupCode,
         status: s.status,
@@ -2077,6 +2130,8 @@
         totalPeriodGrades: 0,
         totalNegativeFinalGrades: 0,
         totalNegativePeriodGrades: 0,
+        totalMissingFinalGrades: 0,
+        totalMissingPeriodGrades: 0,
         weightedAverageGrade: s.weightedAverageGrade ?? null,
         lessonAbsencePercentage: s.lessonAbsencePercentage ?? null,
         problematicSubjects: [],
@@ -2100,6 +2155,7 @@
             firstEntryDate: null,
             lastEntryDate: null,
             teachers: /* @__PURE__ */ new Set(),
+            groupCodes: /* @__PURE__ */ new Set(),
             studentsWithAnyGrade: 0,
             studentsWithFinal: 0,
             studentsWithNegativeFinal: 0,
@@ -2109,6 +2165,7 @@
           };
         }
         const subj = state.subjectStatMap[key];
+        subj.groupCodes.add(groupCode);
         subj.totalStudentsInSubject += 1;
         let studentHasAnyGradeInSubject = false;
         let studentHasFinal = false;
@@ -2168,10 +2225,16 @@
         if (studentHasAnyGradeInSubject) subj.studentsWithAnyGrade += 1;
         if (studentHasFinal) subj.studentsWithFinal += 1;
         if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
-        const shouldConsiderFinalMissing = journalHasFinal[journalId] === true;
-        if (shouldConsiderFinalMissing && studentHasAnyGradeInSubject && !studentHasFinal) subj.studentsMissingFinal += 1;
-        const shouldFlagPeriod = journalHasPeriod[journalId] === true && studentHasAnyGradeInSubject && !studentHasPeriod;
-        const shouldFlagFinal = journalHasFinal[journalId] === true && studentHasAnyGradeInSubject && !studentHasFinal;
+        const hasRegularAfterCutoff = hasRegularActivityAfterCutoff(j.entries, cutoffDate, regularEntryTypeSet);
+        const suppressMissingFinalByCutoff = hasRegularAfterCutoff && journalHasFinalAfterCutoff[journalId] !== true;
+        const suppressMissingPeriodByCutoff = hasRegularAfterCutoff && journalHasPeriodAfterCutoff[journalId] !== true;
+        const shouldFlagPeriod = journalHasPeriod[journalId] === true && studentHasAnyGradeInSubject && !studentHasPeriod && !studentHasFinal && !suppressMissingPeriodByCutoff;
+        const shouldFlagFinal = journalHasFinal[journalId] === true && studentHasAnyGradeInSubject && !studentHasFinal && !suppressMissingFinalByCutoff;
+        if (shouldFlagPeriod) studentStats.totalMissingPeriodGrades += 1;
+        if (shouldFlagFinal) {
+          subj.studentsMissingFinal += 1;
+          studentStats.totalMissingFinalGrades += 1;
+        }
         if (shouldFlagPeriod || shouldFlagFinal) {
           const teacherGuess = [...j.entries].reverse().find((x) => x.teacher)?.teacher ?? "";
           const flags = [
@@ -2195,6 +2258,7 @@
     for (const k of Object.keys(state.subjectStatMap)) {
       const subj = state.subjectStatMap[k];
       if (subj.teachers instanceof Set) subj.teachers = [...subj.teachers].sort();
+      if (subj.groupCodes instanceof Set) subj.groupCodes = [...subj.groupCodes].sort((a, b) => a.localeCompare(b, "et"));
       const total = subj.totalStudentsInSubject || 0;
       if (!total) continue;
       const reasons = [];
@@ -2253,6 +2317,7 @@
       return `${p.subject}|${p.teacher ?? ""}|${flags}`;
     }).join(";");
     const cols = [
+      studentStats.id,
       studentStats.groupCode,
       studentStats.fullname,
       studentStats.status,
@@ -2263,8 +2328,8 @@
       studentStats.totalFinalGrades,
       studentStats.totalNegativePeriodGrades,
       studentStats.totalNegativeFinalGrades,
-      missingPeriodSubjects.join(";"),
-      missingFinalSubjects.join(";"),
+      studentStats.totalMissingPeriodGrades,
+      studentStats.totalMissingFinalGrades,
       problemSubjects,
       yesNo(studentStats.exceptionCandidate)
     ];
@@ -2272,6 +2337,7 @@
   }
   function exportStudentReportTsv(state, { groupCode = null, includeHeader = true, sortByName = true } = {}) {
     const header = [
+      "id",
       "groupCode",
       "fullname",
       "status",
@@ -2282,8 +2348,8 @@
       "totalFinalGrades",
       "negativePeriodGrades",
       "negativeFinalGrades",
-      "missingPeriodSubjects",
-      "missingFinalSubjects",
+      "missingPeriodGradeCount",
+      "missingFinalGradeCount",
       "problemSubjects",
       "exceptionCandidate"
     ].join("	");
@@ -2295,6 +2361,46 @@
       if (sortByName) students.sort((a, b) => String(a.fullname).localeCompare(String(b.fullname), "et"));
       for (const st of students) rows.push(studentToTsvRow(st));
     }
+    return (includeHeader ? [header, ...rows] : rows).join("\n");
+  }
+  function exportSubjectReportTsv(state, { onlyProblematic = true, includeHeader = true } = {}) {
+    const header = [
+      "journalId",
+      "subject",
+      "groupCodes",
+      "teachers",
+      "totalStudentsInSubject",
+      "studentsWithFinal",
+      "studentsWithNegativeFinal",
+      "studentsMissingFinal",
+      "nonGradedStudents",
+      "reasons"
+    ].join("	");
+    const subjectStatMap = state?.subjectStatMap ?? {};
+    const subjects = Object.values(subjectStatMap).filter((s) => !onlyProblematic || s.problematicByRule).sort((a, b) => {
+      const aName = String(a.subject ?? "");
+      const bName = String(b.subject ?? "");
+      const nameCmp = aName.localeCompare(bName, "et");
+      return nameCmp !== 0 ? nameCmp : (a.journalId ?? 0) - (b.journalId ?? 0);
+    });
+    const rows = subjects.map((s) => {
+      const groupCodes = Array.isArray(s.groupCodes) ? s.groupCodes : s.groupCodes instanceof Set ? [...s.groupCodes].sort() : [];
+      const teachers = Array.isArray(s.teachers) ? s.teachers : s.teachers instanceof Set ? [...s.teachers].sort() : [];
+      const reasons = Array.isArray(s.problematicReasons) ? s.problematicReasons : [];
+      const cols = [
+        s.journalId,
+        s.subject,
+        groupCodes.join(";"),
+        teachers.join(";"),
+        s.totalStudentsInSubject,
+        s.studentsWithFinal,
+        s.studentsWithNegativeFinal,
+        s.studentsMissingFinal,
+        s.nonGradedStudents,
+        reasons.join(";")
+      ];
+      return cols.map(tsvCell).join("	");
+    });
     return (includeHeader ? [header, ...rows] : rows).join("\n");
   }
 
@@ -2527,6 +2633,7 @@
     logger = console.warn,
     resolverOptions,
     reportOptions,
+    aggregationOptions,
     concurrency = 4,
     includeHeader = true,
     sortByName = true
@@ -2579,7 +2686,10 @@
     const workers = [];
     for (let i = 0; i < workerCount; i++) workers.push(worker());
     await Promise.all(workers);
-    const state = aggregateAll(normalizedGroups, { logger });
+    const state = aggregateAll(normalizedGroups, {
+      logger,
+      ...aggregationOptions ?? {}
+    });
     const tsv = exportStudentReportTsv(state, { includeHeader, sortByName });
     const totalStudents = Object.values(state?.groups ?? {}).reduce((acc, arr) => {
       return acc + (Array.isArray(arr) ? arr.length : 0);
@@ -2714,11 +2824,19 @@
     }) : `${base}/teacher/studentGroupTeacherReport?studentGroupCode=${encodeURIComponent(groupCode)}`;
     return fetchJsonWithAuth(root, url);
   }
-  async function buildStateForGroup(groupCode, { logger = console.warn, apiBase, ...fetchOpts } = {}) {
+  async function buildStateForGroup(groupCode, {
+    logger = console.warn,
+    apiBase,
+    aggregationOptions,
+    ...fetchOpts
+  } = {}) {
     const raw = await fetchGroupTeacherReport(groupCode, { apiBase, ...fetchOpts });
     const normalized = normalizeGroupReport(raw, groupCode);
     if (!normalized) throw new Error("normalizeGroupReport returned null");
-    return aggregateAll([normalized], { logger });
+    return aggregateAll([normalized], {
+      logger,
+      ...aggregationOptions ?? {}
+    });
   }
   function attachToWindow() {
     const root = getRootWindow();
@@ -2729,6 +2847,7 @@
       normalizeGroupReport,
       aggregateAll,
       exportStudentReportTsv,
+      exportSubjectReportTsv,
       studentToTsvRow,
       fetchAllStudentGroups,
       fetchStudentGroupAutocomplete,

@@ -29,6 +29,7 @@ export function studentToTsvRow(studentStats) {
     .join(";");
 
   const cols = [
+    studentStats.id,
     studentStats.groupCode,
     studentStats.fullname,
     studentStats.status,
@@ -39,8 +40,8 @@ export function studentToTsvRow(studentStats) {
     studentStats.totalFinalGrades,
     studentStats.totalNegativePeriodGrades,
     studentStats.totalNegativeFinalGrades,
-    missingPeriodSubjects.join(";"),
-    missingFinalSubjects.join(";"),
+    studentStats.totalMissingPeriodGrades,
+    studentStats.totalMissingFinalGrades,
     problemSubjects,
     yesNo(studentStats.exceptionCandidate)
   ];
@@ -50,6 +51,7 @@ export function studentToTsvRow(studentStats) {
 
 export function exportStudentReportTsv(state, { groupCode = null, includeHeader = true, sortByName = true } = {}) {
   const header = [
+    "id",
     "groupCode",
     "fullname",
     "status",
@@ -60,8 +62,8 @@ export function exportStudentReportTsv(state, { groupCode = null, includeHeader 
     "totalFinalGrades",
     "negativePeriodGrades",
     "negativeFinalGrades",
-    "missingPeriodSubjects",
-    "missingFinalSubjects",
+    "missingPeriodGradeCount",
+    "missingFinalGradeCount",
     "problemSubjects",
     "exceptionCandidate"
   ].join("\t");
@@ -76,6 +78,55 @@ export function exportStudentReportTsv(state, { groupCode = null, includeHeader 
     if (sortByName) students.sort((a, b) => String(a.fullname).localeCompare(String(b.fullname), "et"));
     for (const st of students) rows.push(studentToTsvRow(st));
   }
+
+  return (includeHeader ? [header, ...rows] : rows).join("\n");
+}
+
+export function exportSubjectReportTsv(state, { onlyProblematic = true, includeHeader = true } = {}) {
+  const header = [
+    "journalId",
+    "subject",
+    "groupCodes",
+    "teachers",
+    "totalStudentsInSubject",
+    "studentsWithFinal",
+    "studentsWithNegativeFinal",
+    "studentsMissingFinal",
+    "nonGradedStudents",
+    "reasons"
+  ].join("\t");
+
+  const subjectStatMap = state?.subjectStatMap ?? {};
+
+  const subjects = Object.values(subjectStatMap)
+    .filter(s => !onlyProblematic || s.problematicByRule)
+    .sort((a, b) => {
+      const aName = String(a.subject ?? "");
+      const bName = String(b.subject ?? "");
+      const nameCmp = aName.localeCompare(bName, "et");
+      return nameCmp !== 0 ? nameCmp : (a.journalId ?? 0) - (b.journalId ?? 0);
+    });
+
+  const rows = subjects.map(s => {
+    const groupCodes = Array.isArray(s.groupCodes) ? s.groupCodes : (s.groupCodes instanceof Set ? [...s.groupCodes].sort() : []);
+    const teachers = Array.isArray(s.teachers) ? s.teachers : (s.teachers instanceof Set ? [...s.teachers].sort() : []);
+    const reasons = Array.isArray(s.problematicReasons) ? s.problematicReasons : [];
+
+    const cols = [
+      s.journalId,
+      s.subject,
+      groupCodes.join(";"),
+      teachers.join(";"),
+      s.totalStudentsInSubject,
+      s.studentsWithFinal,
+      s.studentsWithNegativeFinal,
+      s.studentsMissingFinal,
+      s.nonGradedStudents,
+      reasons.join(";")
+    ];
+
+    return cols.map(tsvCell).join("\t");
+  });
 
   return (includeHeader ? [header, ...rows] : rows).join("\n");
 }

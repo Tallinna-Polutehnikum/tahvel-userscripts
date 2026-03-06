@@ -206,6 +206,168 @@ test("missingFinal is NOT flagged if journal has no finals in the group", () => 
   assert.equal(st.problematicSubjects.length, 0);
 });
 
+test("missing counters are tracked and missing period is ignored when student has final", () => {
+  const raw = {
+    students: [
+      {
+        id: 1,
+        fullname: "HasBoth",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{
+          journalResult: {
+            id: 111,
+            results: [
+              {
+                journal: { id: 111, nameEt: "Math" },
+                studentEntryId: 1,
+                entryType: "SISSEKANNE_R",
+                entryDate: "2025-01-10T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_4" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-01-10T00:00:00Z"
+              },
+              {
+                journal: { id: 111, nameEt: "Math" },
+                studentEntryId: 2,
+                entryType: "SISSEKANNE_L",
+                entryDate: "2025-07-03T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_5" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-07-03T00:00:00Z"
+              }
+            ]
+          }
+        }]
+      },
+      {
+        id: 2,
+        fullname: "MissingBoth",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{
+          journalResult: {
+            id: 111,
+            results: [
+              {
+                journal: { id: 111, nameEt: "Math" },
+                studentEntryId: 3,
+                entryType: "SISSEKANNE_T",
+                entryDate: "2025-02-01T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_3" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-02-01T00:00:00Z"
+              }
+            ]
+          }
+        }]
+      },
+      {
+        id: 3,
+        fullname: "HasFinalOnly",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{
+          journalResult: {
+            id: 111,
+            results: [
+              {
+                journal: { id: 111, nameEt: "Math" },
+                studentEntryId: 4,
+                entryType: "SISSEKANNE_L",
+                entryDate: "2025-07-05T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_4" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-07-05T00:00:00Z"
+              }
+            ]
+          }
+        }]
+      }
+    ]
+  };
+
+  const state = aggregateAll([normalizeGroupReport(raw, "TA-MISS")], { logger: null });
+
+  const missingBoth = state.studentStatMap[2];
+  assert.equal(missingBoth.totalMissingFinalGrades, 1);
+  assert.equal(missingBoth.totalMissingPeriodGrades, 1);
+  assert.deepEqual(missingBoth.problematicSubjects[0].flags.sort(), ["missingFinal", "missingPeriod"]);
+
+  const hasFinalOnly = state.studentStatMap[3];
+  assert.equal(hasFinalOnly.totalMissingPeriodGrades, 0, "missing period must be ignored when student has final");
+  assert.equal(hasFinalOnly.problematicSubjects.length, 0);
+});
+
+test("cutoff suppresses missing final/period when student has regular activity after cutoff", () => {
+  const raw = {
+    students: [
+      {
+        id: 1,
+        fullname: "OldSemester",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{
+          journalResult: {
+            id: 222,
+            results: [
+              {
+                journal: { id: 222, nameEt: "History" },
+                studentEntryId: 1,
+                entryType: "SISSEKANNE_R",
+                entryDate: "2025-12-10T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_4" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-12-10T00:00:00Z"
+              },
+              {
+                journal: { id: 222, nameEt: "History" },
+                studentEntryId: 2,
+                entryType: "SISSEKANNE_L",
+                entryDate: "2025-12-20T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_4" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2025-12-20T00:00:00Z"
+              }
+            ]
+          }
+        }]
+      },
+      {
+        id: 2,
+        fullname: "NewSemester",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{
+          journalResult: {
+            id: 222,
+            results: [
+              {
+                journal: { id: 222, nameEt: "History" },
+                studentEntryId: 3,
+                entryType: "SISSEKANNE_T",
+                entryDate: "2026-09-10T00:00:00Z",
+                grade: { code: "KUTSEHINDAMINE_3" },
+                gradeInsertedBy: "Teacher",
+                gradeInserted: "2026-09-10T00:00:00Z"
+              }
+            ]
+          }
+        }]
+      }
+    ]
+  };
+
+  const ng = normalizeGroupReport(raw, "TA-CUTOFF");
+
+  const withoutCutoff = aggregateAll([ng], { logger: null });
+  assert.equal(withoutCutoff.studentStatMap[2].totalMissingFinalGrades, 1);
+  assert.equal(withoutCutoff.studentStatMap[2].totalMissingPeriodGrades, 1);
+
+  const withCutoff = aggregateAll([ng], {
+    logger: null,
+    missingGradeCutoffDate: "2026-09-01"
+  });
+  assert.equal(withCutoff.studentStatMap[2].totalMissingFinalGrades, 0);
+  assert.equal(withCutoff.studentStatMap[2].totalMissingPeriodGrades, 0);
+  assert.equal(withCutoff.studentStatMap[2].problematicSubjects.length, 0);
+});
+
 test("subject marked problematic when >=75% students negative OR missing final", () => {
   const mkFinal = (id, code) => ({
     journal: { id: 1, nameEt: "X" },

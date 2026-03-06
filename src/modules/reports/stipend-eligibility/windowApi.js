@@ -1,6 +1,6 @@
 import { normalizeGroupReport } from "./normalize.js";
 import { aggregateAll } from "./aggregate.js";
-import { exportStudentReportTsv, studentToTsvRow } from "./tsv.js";
+import { exportStudentReportTsv, exportSubjectReportTsv, studentToTsvRow } from "./tsv.js";
 
 function getRootWindow() {
   // Tampermonkey/Greasemonkey: expose into page context when possible
@@ -280,6 +280,7 @@ async function aggregateAndExportAllGroups({
   logger = console.warn,
   resolverOptions,
   reportOptions,
+  aggregationOptions,
   concurrency = 4,
   includeHeader = true,
   sortByName = true
@@ -345,7 +346,10 @@ async function aggregateAndExportAllGroups({
   for (let i = 0; i < workerCount; i++) workers.push(worker());
   await Promise.all(workers);
 
-  const state = aggregateAll(normalizedGroups, { logger });
+  const state = aggregateAll(normalizedGroups, {
+    logger,
+    ...(aggregationOptions ?? {})
+  });
   const tsv = exportStudentReportTsv(state, { includeHeader, sortByName });
 
   const totalStudents = Object.values(state?.groups ?? {}).reduce((acc, arr) => {
@@ -521,11 +525,22 @@ async function fetchGroupTeacherReport(
   return fetchJsonWithAuth(root, url);
 }
 
-async function buildStateForGroup(groupCode, { logger = console.warn, apiBase, ...fetchOpts } = {}) {
+async function buildStateForGroup(
+  groupCode,
+  {
+    logger = console.warn,
+    apiBase,
+    aggregationOptions,
+    ...fetchOpts
+  } = {}
+) {
   const raw = await fetchGroupTeacherReport(groupCode, { apiBase, ...fetchOpts });
   const normalized = normalizeGroupReport(raw, groupCode);
   if (!normalized) throw new Error("normalizeGroupReport returned null");
-  return aggregateAll([normalized], { logger });
+  return aggregateAll([normalized], {
+    logger,
+    ...(aggregationOptions ?? {})
+  });
 }
 
 function attachToWindow() {
@@ -539,6 +554,7 @@ function attachToWindow() {
     normalizeGroupReport,
     aggregateAll,
     exportStudentReportTsv,
+    exportSubjectReportTsv,
     studentToTsvRow,
     fetchAllStudentGroups,
     fetchStudentGroupAutocomplete,
