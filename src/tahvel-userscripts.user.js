@@ -1,20 +1,7 @@
 import './modules/sessionKeepAlive.js';
 import './modules/usageLogger.js';
 import './modules/teachers.js';
-import './modules/gradeHistory/gradeHistory.js';
 import './modules/reports/stipend-eligibility/windowApi.js';
-
-// Teachers.js
-/**
- * Kuidas seda skripti lugeda/täiendada:
- *  - Voldi IDE-s kõik kommentaari regioonid kokku, et näha ainult pealkirju.  VSC: Ctrl+Shift+P -> Fold All Regions
- *  - Kood algab mutation observeriga, iga kord kui leht muutub käivitatakse skript uuesti vastavalt aadressile ja sisule.
- *    See osa asub `#region Entry point to scripts and MutationObserver config` -> fn `observeTargetChange`
- *    Olen pannud igale feature'le HTML atribuutidena markeri, et kood on juba käivitatud vältimaks mitmekordset rakendamist.
- *  - Sealt edasi saad `Go to Definition` (Ctrl+Mouse Left Button) abil funktsiooni nimede peal. Allpool entry regionit olen pannud kõik funktsioonaalsuse ja nende kirjeldused
- *    uuesti regionite sisse - lihtsalt selleks, et kinni-lahti voltimine oleks kergem. Ma tundsin, et on parem kui need pole kõik mutatsiooni observeri sees.
- *  - Kõige põhjas (faili lõpus) on re-usable asjad
- */
 
 // Features:
 // - Päevikus näeb õpilase keskmist hinnet (nüüd ka ilma perioodihindeta)

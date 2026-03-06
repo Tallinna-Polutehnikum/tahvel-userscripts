@@ -10,5 +10,6 @@
 // @downloadURL  https://bit.ly/tahvel-userscript
 // @grant        GM_log
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==

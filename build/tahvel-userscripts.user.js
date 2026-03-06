@@ -10,11 +10,12 @@
 // @downloadURL  https://bit.ly/tahvel-userscript
 // @grant        GM_log
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
 // @require      https://cdn.jsdelivr.net/npm/chart.js
 // ==/UserScript==
 
 (() => {
-  // src/modules/randomRequest.js
+  // src/modules/sessionKeepAlive.js
   setInterval(() => {
     fetch("https://tahvel.edu.ee/hois_back/user", {
       method: "GET",
@@ -46,6 +47,1043 @@
       }
     }
   }, 0);
+
+  // src/core/xhrInterceptor.js
+  var xhrInterceptors = [];
+  function addXHRInterceptor(filterFn, callback) {
+    xhrInterceptors.push({ filterFn, callback });
+  }
+  var originalOpen = XMLHttpRequest.prototype.open;
+  var originalSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this._requestURL = url;
+    this._requestMethod = method;
+    return originalOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    const xhr = this;
+    this.addEventListener("readystatechange", function() {
+      if (xhr.readyState !== XMLHttpRequest.DONE) return;
+      for (const { filterFn, callback } of xhrInterceptors) {
+        if (!filterFn(xhr._requestURL)) continue;
+        try {
+          callback(JSON.parse(xhr.responseText));
+        } catch {
+          callback(xhr.responseText);
+        }
+      }
+    });
+    return originalSend.apply(this, arguments);
+  };
+  var _currentStudent = null;
+  var _currentClassTeacherReport = null;
+  var _currentStudentModules = null;
+  function getCurrentStudent() {
+    return _currentStudent;
+  }
+  function getCurrentClassTeacherReport() {
+    return _currentClassTeacherReport;
+  }
+  function getCurrentStudentModules() {
+    return _currentStudentModules;
+  }
+  addXHRInterceptor(
+    (url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"),
+    (data) => {
+      if (data?.teacher) {
+        localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
+      }
+      if (data?.school?.id) {
+        localStorage.setItem("schoolId", JSON.stringify(data.school.id));
+      }
+    }
+  );
+  addXHRInterceptor(
+    (url) => url.includes("hois_back/reports/studentgroupteacher"),
+    (data) => {
+      _currentClassTeacherReport = data;
+    }
+  );
+  addXHRInterceptor(
+    (url) => url.match(/hois_back\/students\/\d+$/) !== null,
+    (data) => {
+      _currentStudent = data;
+    }
+  );
+  addXHRInterceptor(
+    (url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/) !== null,
+    (data) => {
+      _currentStudentModules = data;
+    }
+  );
+
+  // src/core/settings.js
+  var STORAGE_PREFIX = "tahvelUserscripts.features.";
+  var registry = [];
+  function registerFeature(descriptor) {
+    registry.push(descriptor);
+  }
+  function isFeatureEnabled(id) {
+    const stored = localStorage.getItem(STORAGE_PREFIX + id);
+    if (stored !== null) return stored === "true";
+    const topLevel = registry.find((f) => f.id === id);
+    if (topLevel) return topLevel.defaultEnabled;
+    for (const feature of registry) {
+      const sub = (feature.settings ?? []).find((s) => s.id === id);
+      if (sub) return sub.defaultEnabled;
+    }
+    return true;
+  }
+  function generateMenuItems() {
+    if (typeof GM_registerMenuCommand !== "function") return;
+    for (const feature of registry) {
+      const enabled = isFeatureEnabled(feature.id);
+      GM_registerMenuCommand(
+        `${enabled ? "\u2713" : "\u2717"} ${feature.label}`,
+        () => {
+          localStorage.setItem(STORAGE_PREFIX + feature.id, String(!enabled));
+          alert(`"${feature.label}" ${!enabled ? "lubatud" : "keelatud"}. Laadi leht uuesti.`);
+        }
+      );
+      for (const sub of feature.settings ?? []) {
+        const subEnabled = isFeatureEnabled(sub.id);
+        GM_registerMenuCommand(
+          `\xA0\xA0${subEnabled ? "\u2713" : "\u2717"} ${sub.label}`,
+          () => {
+            localStorage.setItem(STORAGE_PREFIX + sub.id, String(!subEnabled));
+            alert(`"${sub.label}" ${!subEnabled ? "lubatud" : "keelatud"}. Laadi leht uuesti.`);
+          }
+        );
+      }
+    }
+  }
+
+  // src/core/observer.js
+  var handlers = [];
+  function registerFeatureHandler(handler) {
+    handlers.push(handler);
+  }
+  function addAppliedMarker(element) {
+    if (!element) return;
+    element.dataset.userscriptApplied = "true";
+  }
+  function isAlreadyApplied(element) {
+    if (!element) return false;
+    return element.dataset.userscriptApplied === "true";
+  }
+  function observeTargetChange(targetNode, callback) {
+    const observer = new MutationObserver((mutationsList, obs) => {
+      for (const mutation of mutationsList) {
+        if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+          obs.disconnect();
+          callback();
+          obs.observe(targetNode, { childList: true, subtree: true });
+          return;
+        }
+      }
+    });
+    observer.observe(targetNode, { childList: true, subtree: true });
+    return observer;
+  }
+  function initObserver() {
+    observeTargetChange(document.body, async () => {
+      const url = window.location.href;
+      const dom = document;
+      for (const handler of handlers) {
+        if (!isFeatureEnabled(handler.featureId)) {
+          handler.cleanup?.(url, dom);
+          continue;
+        }
+        if (handler.match(url, dom)) {
+          await handler.run(url, dom);
+        } else {
+          handler.cleanup?.(url, dom);
+        }
+      }
+    });
+  }
+
+  // src/modules/journal/averageGrade.js
+  registerFeature({
+    id: "journal.averageGrade",
+    label: "P\xE4evikus keskmised hinded",
+    description: "Lisab p\xE4eviku tabelisse keskmise hinde ja summa veerud perioodi- ja l\xF5pphinnete k\xF5rvale.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "journal.averageGrade",
+    match: (url) => url.includes("journal"),
+    run(_url, dom) {
+      const journalTableRows = dom.querySelectorAll(".tahvel-table tr");
+      if (journalTableRows?.length > 2 && !isAlreadyApplied(journalTableRows[1])) {
+        addAverageGradeColumn();
+        columnBackgroundColors();
+        addAppliedMarker(journalTableRows[1]);
+      }
+    }
+  });
+  var gradePalette = {
+    5: "#b3ffb3",
+    4: "#b3ffb3",
+    3: "#ffffb3",
+    2: "#ffb3b3",
+    1: "#ffb3b3",
+    0: "#ffb3b3"
+  };
+  function calculateAverageGrade(grades) {
+    let total = 0;
+    let count = 0;
+    for (const grade of grades) {
+      let lastGrade = grade.trim().split("/").pop().trim();
+      if (lastGrade === "MA" || lastGrade === "X") lastGrade = "0";
+      const parsed = parseFloat(lastGrade);
+      if (!isNaN(parsed)) {
+        total += parsed;
+        count++;
+      }
+    }
+    return [count > 0 ? (total / count).toFixed(1) : "0.0", total];
+  }
+  function addAverageGradeColumn() {
+    const observer = new MutationObserver(() => {
+      const gradeTable = document.querySelector("#studentTable");
+      if (!gradeTable) return;
+      observer.disconnect();
+      const tableHeaders = gradeTable.querySelectorAll(
+        '.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])'
+      );
+      const periodGradeHeaders = gradeTable.querySelectorAll(
+        '.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]'
+      );
+      const finalGradeHeader = gradeTable.querySelector(
+        '.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]'
+      );
+      const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
+      let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
+      let usedFinalGradeAsPeriodGrade = false;
+      if (periodGradeColumnIndices.length === 0) {
+        if (finalGradeHeader) {
+          periodGradeColumnIndices = [finalGradeHeader.cellIndex];
+        } else {
+          periodGradeColumnIndices = [gradeTable.querySelectorAll(".tahvel-table thead th").length - 1];
+        }
+        usedFinalGradeAsPeriodGrade = true;
+      }
+      const rows = gradeTable.querySelectorAll(".tahvel-table tr");
+      const headerRow = rows[0];
+      [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach((h) => h.remove());
+      [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((h) => h.remove());
+      [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach((h) => h.remove());
+      for (let i = 0; i < periodGradeColumnIndices.length; i++) {
+        const avgHeader = document.createElement("th");
+        avgHeader.textContent = "Keskm.";
+        avgHeader.setAttribute("aria-label", "Keskmine hinne");
+        avgHeader.style.cssText = "width:20px;padding:0 2px;background-color:#e2e4f4";
+        headerRow.insertBefore(avgHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
+        const sumHeader = document.createElement("th");
+        sumHeader.textContent = "Summa";
+        sumHeader.setAttribute("aria-label", "Hinnete summa");
+        sumHeader.style.cssText = "width:20px;padding:0 2px;background-color:#e2e4f4";
+        headerRow.insertBefore(sumHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
+      }
+      if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
+        const periodGradesHeader = document.createElement("th");
+        periodGradesHeader.textContent = "Perioodide hinded";
+        periodGradesHeader.setAttribute("aria-label", "Perioodide hinded");
+        periodGradesHeader.style.cssText = "width:20px;padding:0 2px;background-color:#f7b0c8";
+        headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
+      }
+      const totalColumnsAndScores = [];
+      rows.forEach((row, rowIndex) => {
+        if (rowIndex === 0) return;
+        row.addEventListener("mouseover", function() {
+          this.style.outline = "2px solid #000";
+          this.style.outlineOffset = "-2px";
+        });
+        row.addEventListener("mouseout", function() {
+          this.style.outline = "unset";
+        });
+        const grades = Array.from({ length: periodGradeColumnIndices.length }, () => []);
+        const periodGrades = [];
+        let currentPeriodIndex = 0;
+        for (const columnIndex of gradeColumnIndices) {
+          if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) currentPeriodIndex++;
+          if (currentPeriodIndex < periodGradeColumnIndices.length) {
+            const cell = row.querySelectorAll("td")[columnIndex];
+            grades[currentPeriodIndex].push(cell?.textContent?.trim() ?? "");
+          }
+        }
+        for (const columnIndex of periodGradeColumnIndices) {
+          const cell = row.querySelectorAll("td")[columnIndex];
+          periodGrades.push((cell?.textContent?.trim() ?? "").split("/").pop().trim());
+        }
+        for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+          const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
+          const studentName = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
+          const avgCell = document.createElement("td");
+          avgCell.style.cssText = "width:20px;padding:0 2px";
+          avgCell.textContent = averageGrade;
+          avgCell.title = studentName;
+          avgCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || "#fff";
+          row.insertBefore(avgCell, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
+          const sumCell = document.createElement("td");
+          sumCell.style.cssText = "width:20px;padding:0 2px";
+          sumCell.textContent = totalScore;
+          sumCell.title = studentName;
+          if (!totalColumnsAndScores[pgIndex]) totalColumnsAndScores[pgIndex] = [];
+          totalColumnsAndScores[pgIndex].push([sumCell, totalScore]);
+          row.insertBefore(sumCell, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
+        }
+        if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
+          const periodGradeCell = document.createElement("td");
+          periodGradeCell.style.padding = "0 2px";
+          periodGradeCell.textContent = periodGrades.join(" / ");
+          row.insertBefore(periodGradeCell, row.children[finalGradeHeader.cellIndex - 1]);
+        }
+      });
+      for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
+        const scores = totalColumnsAndScores[pgIndex] ?? [];
+        const secondBest = scores.map(([, s]) => s).sort((a, b) => b - a)[1] ?? 1;
+        for (const [cell, score] of scores) {
+          const n = score / secondBest;
+          const color = n > 0.6 ? `rgb(${255 - n * 76}, 255, ${255 - n * 76})` : `rgb(255, ${255 - n * 76}, ${255 - n * 76})`;
+          cell.style.backgroundColor = color;
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  function columnBackgroundColors() {
+    const coloredColumns = {};
+    [...document.querySelectorAll(".tahvel-table thead th.bordered")].filter((h) => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);")).forEach((h) => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0]);
+    for (const [columnIndex, bg] of Object.entries(coloredColumns)) {
+      const rgbValues = bg.match(/\d+/g).map(Number);
+      const alpha = Math.min(...rgbValues) < 120 ? 0.2 : 0.5;
+      document.querySelectorAll(`.tahvel-table tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach((td) => {
+        td.style.background = `rgba(${rgbValues[0]}, ${rgbValues[1]}, ${rgbValues[2]}, ${alpha})`;
+      });
+    }
+  }
+
+  // src/core/config.js
+  var TAHVEL_API_URL = window.location.origin + "/hois_back";
+
+  // src/modules/journal/utils.js
+  var SissekandedEnum = {
+    SISSEKANNE_EX: "Eksam",
+    SISSEKANNE_E: "E-\xF5pe",
+    SISSEKANNE_H: "Hindamine",
+    SISSEKANNE_HO: "Hoolsus",
+    SISSEKANNE_I: "Iseseisev t\xF6\xF6",
+    SISSEKANNE_C: "Kontrollt\xF6\xF6",
+    SISSEKANNE_KU: "Kursuse hinne",
+    SISSEKANNE_K: "K\xE4itumine",
+    SISSEKANNE_L: "L\xF5pptulemus",
+    SISSEKANNE_R: "Perioodi hinne",
+    SISSEKANNE_P: "Praktiline t\xF6\xF6",
+    SISSEKANNE_T: "Tund",
+    SISSEKANNE_O: "\xD5piv\xE4ljund"
+  };
+
+  // src/modules/journal/entryTooltips.js
+  registerFeature({
+    id: "journal.entryTooltips",
+    label: "P\xE4eviku kande kirjeldused",
+    description: "Hiirega kuup\xE4eva peale liikumisel n\xE4itab tunni kirjeldust ja kodut\xF6\xF6 infot.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "journal.entryTooltips",
+    match: (url) => url.includes("journal"),
+    run() {
+      return journalEntryTooltips();
+    }
+  });
+  async function journalEntryTooltips() {
+    const journalId = window.location.href.match(/journal\/(\d+)/)?.[1];
+    if (!journalId) return;
+    const entryDOMs = document.querySelectorAll(`[ng-if^="journalEntry.entryType.code"]`);
+    if (entryDOMs.length === 0) return;
+    let table = entryDOMs[0];
+    while (table.tagName !== "TABLE") table = table.parentElement;
+    const tableBody = table?.querySelector("tbody");
+    const headerRow = table.querySelector("thead tr");
+    const [res1, res2] = await Promise.all([
+      fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
+        headers: { "accept": "application/json, text/plain, */*", "x-requested-with": "XMLHttpRequest" },
+        method: "GET",
+        mode: "cors",
+        credentials: "include"
+      }),
+      fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
+        headers: { "Accept": "application/json, text/plain, */*", "X-Requested-With": "XMLHttpRequest" },
+        method: "GET",
+        mode: "cors",
+        credentials: "include"
+      })
+    ]);
+    const dataEntries = await res1.json();
+    const journalEntries = await res2.json();
+    const skipHeaders = ["Nr", "\xD5ppija, \xD5pper\xFChm", "Keskm.", "Summa"];
+    let domIndex = 0;
+    journalEntries.forEach((dateEntry, entryIndex) => {
+      domIndex++;
+      let content = headerRow.children[domIndex]?.textContent;
+      while (content && skipHeaders.includes(content)) {
+        domIndex++;
+        content = headerRow.children[domIndex]?.textContent;
+      }
+      const entry = dataEntries.content.find((d) => d.id === dateEntry.id);
+      if (!entry) return;
+      const el = entryDOMs[entryIndex];
+      const entryType = SissekandedEnum[entry.entryType] ?? entry.entryType;
+      const typeLabel = entry.nameEt !== entryType ? `${entryType}: ${entry.nameEt}` : entryType;
+      let tooltipHtml = `<b>${typeLabel}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
+      if (entry.homework) {
+        const due = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString("et") : "";
+        tooltipHtml += `<br><br><b>Kodut\xF6\xF6 ${due}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
+      }
+      const tooltip = createTooltip(tooltipHtml);
+      const attachTooltip = (target, offsetY) => {
+        target.addEventListener("mousemove", (event) => {
+          tooltip.style.display = "block";
+          tooltip.style.top = event.clientY + offsetY + window.scrollY + "px";
+          tooltip.style.left = event.clientX - target.getBoundingClientRect().width / 2 + "px";
+        });
+        target.addEventListener("mouseout", () => {
+          if (tooltip.style.display === "block") tooltip.style.display = "none";
+        });
+      };
+      attachTooltip(el, 20);
+      for (let i = 0; i < tableBody.children.length; i++) {
+        const cell = tableBody.children[i].children[domIndex]?.querySelector("div.layout-row > div");
+        if (cell) attachTooltip(cell, 46);
+      }
+    });
+  }
+  function createTooltip(htmlContent) {
+    const div = document.createElement("div");
+    div.innerHTML = htmlContent;
+    div.style.cssText = "display:none;position:absolute;z-index:1000;background:white;padding:5px;max-width:500px;pointer-events:none";
+    document.body.appendChild(div);
+    return div;
+  }
+
+  // src/modules/journal/batchAbsent.js
+  registerFeature({
+    id: "journal.batchAbsent",
+    label: "K\xF5ik puudujaks korraga",
+    description: "Lisab p\xE4eviku kande popupile nupu, mis m\xE4rgib k\xF5ik \xF5pilased korraga puudujaks v\xF5i kohalviibijateks.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "journal.batchAbsent",
+    match: (url) => url.includes("journal"),
+    run() {
+      const batchGrade = document.querySelector(".mass-grade");
+      if (batchGrade && batchGrade.textContent.includes("Hinde korraga") && !isAlreadyApplied(batchGrade)) {
+        journalEntryBatchAbsent(batchGrade);
+        addAppliedMarker(batchGrade);
+      }
+    }
+  });
+  function journalEntryBatchAbsent(siblingContainer) {
+    const link = document.createElement("a");
+    link.href = "#";
+    link.textContent = " | M\xE4rgi k\xF5ik puudujaks";
+    link.style.cssText = "color:blue;cursor:pointer";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      let checkboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
+      const allChecked = checkboxes.every((btn) => btn.matches(":has(div.checked)"));
+      checkboxes.forEach((btn) => {
+        if (allChecked) {
+          if (btn.matches(":has(div.checked)")) btn.click();
+        } else {
+          if (!btn.matches(":has(div.checked)")) btn.click();
+        }
+      });
+      checkboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
+      const nowAllChecked = checkboxes.every((btn) => btn.matches(":has(div.checked)"));
+      link.textContent = nowAllChecked ? " | M\xE4rgi k\xF5ik kohalolijaks" : " | M\xE4rgi k\xF5ik puudujaks";
+    });
+    siblingContainer.appendChild(link);
+  }
+
+  // src/modules/journal/notifyStudent.js
+  registerFeature({
+    id: "journal.notifyStudent",
+    label: "Kodut\xF6\xF6 teavituse automaatika",
+    description: "M\xE4rgib isTest kasti automaatselt kui kodut\xF6\xF6 kirjeldus on t\xE4idetud.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "journal.notifyStudent",
+    match: (url) => url.includes("journal"),
+    run() {
+      const homeworkDesc = document.querySelector("[ng-model='journalEntry.homework']");
+      if (homeworkDesc && !isAlreadyApplied(homeworkDesc)) {
+        journalEntryNotifyStudent(homeworkDesc);
+      }
+    }
+  });
+  function journalEntryNotifyStudent(homeworkDesc) {
+    const isTestCheckbox = document.querySelector("[ng-model='journalEntry.isTest']");
+    homeworkDesc.addEventListener("input", () => {
+      const hasHomework = homeworkDesc.value.trim().length > 0;
+      if (isTestCheckbox.getAttribute("aria-checked") === (hasHomework ? "false" : "true")) {
+        isTestCheckbox.click();
+      }
+    });
+    addAppliedMarker(homeworkDesc);
+    const entryTypeOptions = document.querySelectorAll(`[value^="SISSEKANNE_"]`);
+    entryTypeOptions.forEach((option) => {
+      option.addEventListener("click", () => {
+        const hasHomework = homeworkDesc.value.trim().length > 0;
+        const shouldBeChecked = option.value === "SISSEKANNE_H" || hasHomework;
+        if (isTestCheckbox.getAttribute("aria-checked") === (shouldBeChecked ? "false" : "true")) {
+          isTestCheckbox.click();
+        }
+      });
+    });
+  }
+
+  // src/modules/studentProfile/agePin.js
+  registerFeature({
+    id: "studentProfile.agePin",
+    label: "\xD5pilase vanus isikukoodi k\xF5rval",
+    description: "Arvutab isikukoodist vanuse ja kuvab selle \xF5pilaste nimekirjas isikukoodi j\xE4rel.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "studentProfile.agePin",
+    match: (url) => url.includes("students"),
+    run(_url, dom) {
+      const table = dom.querySelector(".md-table");
+      const marker = dom.querySelector(".md-table tbody > tr > td:nth-child(1)");
+      if (table && !isAlreadyApplied(marker)) {
+        appendAgeToPin(dom);
+        addAppliedMarker(marker);
+      }
+    }
+  });
+  function calculateAgeFromPin(pin) {
+    const century = parseInt(pin.substring(0, 1));
+    const year = parseInt(pin.substring(1, 3));
+    const month = parseInt(pin.substring(3, 5));
+    const day = parseInt(pin.substring(5, 7));
+    const baseYear = century === 3 || century === 4 ? 1900 : 2e3;
+    const birthDate = new Date(baseYear + year, month - 1, day);
+    const ageMs = Date.now() - birthDate.getTime();
+    return Math.abs(new Date(ageMs).getUTCFullYear() - 1970);
+  }
+  function appendAgeToPin(dom) {
+    const columnHeader = dom.querySelector("[md-order-by='person.idcode']");
+    if (!columnHeader) return;
+    const columnNumber = Array.from(columnHeader.parentElement.children).indexOf(columnHeader);
+    const cells = Array.from(
+      columnHeader.parentElement.parentElement.parentElement.querySelectorAll(
+        `tbody > tr > td:nth-child(${columnNumber + 1})`
+      )
+    );
+    for (const cell of cells) {
+      const pin = cell.textContent.trim();
+      const age = calculateAgeFromPin(pin);
+      cell.innerHTML = `${pin} <span style="font-weight:${age < 18 ? "bold" : "normal"}">(${age})</span>`;
+    }
+  }
+
+  // src/modules/studentProfile/negativeResults.js
+  registerFeature({
+    id: "studentProfile.negativeResults",
+    label: "Negatiivsete tulemuste t\xF6\xF6riistad",
+    description: 'Lisab "Sooritamise j\xE4rjekorras" vahekaardile filtrid, peidab veerge ja n\xE4itab negatiivsete hinnete arvu.',
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "studentProfile.negativeResults",
+    match: (url) => /students\/.*\/results/.test(url),
+    run(url, dom) {
+      const studentId = url.match(/students\/(\d+)/)?.[1];
+      if (!dom.querySelector(`.md-active[aria-label='Sooritamise j\xE4rjekorras']`)) return;
+      const table = dom.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
+      const tableRows = table?.querySelectorAll("tbody tr");
+      if (table && tableRows?.length > 5 && !isAlreadyApplied(table)) {
+        negativeResultsToolsInStudentProfile(table, tableRows, studentId);
+        addAppliedMarker(table);
+      }
+    }
+  });
+  function negativeResultsToolsInStudentProfile(table, tableRows, studentId) {
+    const tableHeaders = table.querySelectorAll("thead th");
+    const NEGATIVE_GRADES = ["MA", "X", "1", "2"];
+    const ALL_GRADES = [...NEGATIVE_GRADES, "3", "4", "5", "A"];
+    let negativeGrades = 0;
+    let totalGrades = 0;
+    tableRows.forEach((row) => {
+      const type = row.querySelector("td:nth-child(2)")?.textContent.trim();
+      const grade = row.querySelector("td:nth-child(3)")?.textContent.trim();
+      if (ALL_GRADES.includes(grade) && type === "L\xF5pptulemus") totalGrades++;
+      if (NEGATIVE_GRADES.includes(grade) && type === "L\xF5pptulemus") negativeGrades++;
+    });
+    const pct = totalGrades > 0 ? (negativeGrades / totalGrades * 100).toFixed(0) : 0;
+    const counter = document.createElement("span");
+    counter.textContent = `Negatiivseid l\xF5pptulemusi: ${negativeGrades} (~${pct}%)`;
+    const negToggle = document.createElement("button");
+    negToggle.textContent = "N\xE4ita neg. hindeid";
+    negToggle.classList.add("md-button", "md-raised");
+    negToggle.style.marginRight = "10px";
+    negToggle.dataset.active = "false";
+    negToggle.addEventListener("click", () => {
+      const active = negToggle.dataset.active === "true";
+      negToggle.dataset.active = String(!active);
+      negToggle.textContent = active ? "N\xE4ita neg. hindeid" : "N\xE4ita k\xF5iki hindeid";
+      tableRows.forEach((row) => {
+        const type = row.querySelector("td:nth-child(2)")?.textContent.trim();
+        const grade = row.querySelector("td:nth-child(3)")?.textContent.trim();
+        row.style.display = !active && (!NEGATIVE_GRADES.includes(grade) || type !== "L\xF5pptulemus") ? "none" : "";
+      });
+    });
+    const hideColumns = [1, 3];
+    const hideToggle = document.createElement("button");
+    hideToggle.textContent = "Peida mittevajalikud veerud";
+    hideToggle.classList.add("md-button", "md-raised");
+    hideToggle.style.marginRight = "10px";
+    hideToggle.dataset.active = "false";
+    hideToggle.addEventListener("click", () => {
+      const active = hideToggle.dataset.active === "true";
+      hideToggle.dataset.active = String(!active);
+      hideToggle.textContent = active ? "Peida mittevajalikud veerud" : "N\xE4ita k\xF5iki veerge";
+      tableRows.forEach((row) => {
+        hideColumns.forEach((i) => {
+          row.children[i].style.display = active ? "" : "none";
+          tableHeaders[i].style.display = active ? "" : "none";
+        });
+      });
+    });
+    const journalBtn = document.createElement("button");
+    journalBtn.textContent = "Lisa p\xE4eviku lingid";
+    journalBtn.classList.add("md-button", "md-raised");
+    journalBtn.style.marginRight = "10px";
+    journalBtn.addEventListener("click", () => {
+      fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
+        headers: { accept: "application/json" }
+      }).then((r) => r.json()).then((data) => {
+        tableRows.forEach((row) => {
+          const subject = row.querySelector("td:nth-child(1)")?.textContent.trim().toLowerCase();
+          data.filter((e) => e.type === "journal" && subject?.startsWith(e.nameEt.toLowerCase())).forEach((e) => {
+            const btn = document.createElement("button");
+            btn.textContent = "P\xE4evik";
+            btn.addEventListener("click", () => window.open(`#/journal/${e.entityId}/edit`, "_blank"));
+            row.querySelector("td:nth-child(1)")?.appendChild(btn);
+          });
+        });
+        journalBtn.disabled = true;
+      });
+    });
+    table.parentElement.insertBefore(counter, table);
+    table.parentElement.insertBefore(journalBtn, table);
+    table.parentElement.insertBefore(hideToggle, table);
+    table.parentElement.insertBefore(negToggle, table);
+  }
+
+  // src/utils/auth.js
+  function getCsrfToken() {
+    const match = document.cookie.match(new RegExp("(^| )XSRF-TOKEN=([^;]+)"));
+    if (match) return decodeURIComponent(match[2]);
+    return null;
+  }
+
+  // src/modules/studentProfile/moduleLinks.js
+  registerFeature({
+    id: "studentProfile.moduleLinks",
+    label: "Mooduli protokollide ja p\xE4evikute lingid",
+    description: 'Lisab "\xD5ppekava t\xE4itmine" vahekaardile lingid mooduli protokollidele ja p\xE4evikutele, ning nupu uue protokolli loomiseks.',
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "studentProfile.moduleLinks",
+    match: (url) => /students\/.*\/results/.test(url),
+    async run(url, dom) {
+      if (!dom.querySelector(`.md-active[aria-label='\xD5ppekava t\xE4itmine']`)) return;
+      const studentId = url.match(/students\/(\d+)/)?.[1];
+      const firstModule = dom.querySelector(".hois-collapse-parent div:first-of-type > span");
+      if (!firstModule || isAlreadyApplied(firstModule)) return;
+      const currentStudent = getCurrentStudent();
+      if (currentStudent?.id != studentId) return;
+      addAppliedMarker(firstModule);
+      await studentProfileModuleAndJournalLinks(studentId);
+    }
+  });
+  async function studentProfileModuleAndJournalLinks(studentId) {
+    const currentStudent = getCurrentStudent();
+    const currentStudentModules = getCurrentStudentModules();
+    const curriculumVersionId = currentStudent?.curriculumVersion?.id;
+    const groupCode = currentStudent?.curriculumVersion?.code;
+    const modulesDom = document.querySelectorAll(
+      ".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span"
+    );
+    const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
+    const moduleProtocolsResponse = await fetch(
+      `${TAHVEL_API_URL}/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
+      { headers: { accept: "application/json" } }
+    );
+    const moduleProtocols = await moduleProtocolsResponse.json();
+    modulesDom.forEach((moduleDom) => {
+      const moduleName = moduleDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+      moduleProtocols.content.filter(
+        (mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName
+      ).forEach((mp) => {
+        const a = document.createElement("a");
+        a.href = `#/moduleProtocols/module/${mp.id}/edit`;
+        a.target = "_blank";
+        a.textContent = mp.id;
+        a.style.cssText = "padding-right:5px;font-weight:bold;color:var(--color-new-primary-blue-1);text-decoration:none";
+        moduleDom.appendChild(a);
+      });
+      const moduleData = currentStudentModules?.curriculumModules?.find(
+        (m) => m.curriculumModule.nameEt === moduleName
+      );
+      if (!moduleData) return;
+      const newLink = document.createElement("a");
+      newLink.textContent = "Uus protokoll";
+      newLink.style.cssText = "padding-right:5px;color:var(--color-new-primary-blue-1);text-decoration:none;text-transform:none;border:1px solid var(--color-new-primary-blue-1);white-space:nowrap";
+      newLink.addEventListener("click", async () => {
+        newLink.style.pointerEvents = "none";
+        newLink.style.color = "gray";
+        newLink.textContent = "Laeb...";
+        const restore = () => {
+          newLink.style.pointerEvents = "";
+          newLink.style.color = "var(--color-new-primary-blue-1)";
+          newLink.textContent = "Uus protokoll";
+        };
+        const studyYearRes = await fetch(`${TAHVEL_API_URL}/school/studyYear/current-or-next-dto`, {
+          credentials: "include",
+          headers: { Accept: "application/json, text/plain, */*" }
+        });
+        const studyYear = await studyYearRes.json();
+        const studentsRes = await fetch(
+          `${TAHVEL_API_URL}/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
+          { credentials: "include", headers: { Accept: "application/json, text/plain, */*" } }
+        );
+        const students = await studentsRes.json();
+        if (!(currentStudent.curriculumVersion.id && studyYear.id && students.teacher?.id && moduleData.id)) {
+          console.error("Missing data for new protocol", { moduleData, students, studyYear, currentStudent });
+          alert("Tekkis viga, vaata konsooli.");
+          restore();
+          return;
+        }
+        const confirmText = `Oled loomas uut protokolli moodulile ${moduleName}. Moodulile m\xE4\xE4ratakse \xF5ppeaasta ${studyYear.nameEt}, \xF5petajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} \xF5pilast.`;
+        if (!confirm(confirmText)) {
+          restore();
+          return;
+        }
+        const newModuleRes = await fetch(`${TAHVEL_API_URL}/moduleProtocols`, {
+          credentials: "include",
+          headers: {
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json;charset=utf-8",
+            "X-XSRF-TOKEN": getCsrfToken()
+          },
+          method: "POST",
+          body: JSON.stringify({
+            protocolVdata: {
+              curriculumVersionOccupationModule: moduleData.id,
+              curriculumVersion: currentStudent.curriculumVersion.id,
+              studyYear: studyYear.id,
+              teacher: students.teacher.id
+            },
+            protocolStudents: students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
+            type: "module",
+            isBasic: false,
+            isSecondary: false,
+            isHigher: false,
+            isVocational: true
+          })
+        });
+        const newModule = await newModuleRes.json();
+        window.open(`#/moduleProtocols/module/${newModule.id}/edit`, "_blank");
+        restore();
+      });
+      moduleDom.appendChild(newLink);
+    });
+    const journalsRes = await fetch(
+      `${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`,
+      { headers: { accept: "application/json" } }
+    );
+    const vocationalEntities = await journalsRes.json();
+    journalsDom.forEach((journalDom) => {
+      const journalName = journalDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
+      vocationalEntities.filter((e) => e.type === "journal" && e.nameEt === journalName).forEach((e) => {
+        const a = document.createElement("a");
+        a.href = `#/journal/${e.entityId}/edit`;
+        a.target = "_blank";
+        a.textContent = e.entityId;
+        a.style.paddingRight = "5px";
+        journalDom.appendChild(a);
+      });
+    });
+  }
+
+  // src/utils/misc.js
+  function simulateTyping(inputElement, text) {
+    inputElement.value = text;
+    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  // src/modules/rja/parameters.js
+  registerFeature({
+    id: "rja.parameters",
+    label: "RJA: automaatsed parameetrid",
+    description: "T\xE4idab r\xFChmajuhataja aruandes kuup\xE4eva ja kandete valikud automaatselt r\xFChma koodi p\xF5hjal.",
+    defaultEnabled: true,
+    settings: [
+      {
+        id: "rja.oppetoetus",
+        label: "RJA: \xF5ppetoetuse re\u017Eiim",
+        description: "Muudab kandete valikut ja l\xF5pukuup\xE4eva eelmise semestri andmete jaoks (\xF5ppetoetuse arvutamiseks).",
+        defaultEnabled: false
+      }
+    ]
+  });
+  registerFeatureHandler({
+    featureId: "rja.parameters",
+    match: (url) => url.includes("reports/studentgroupteacher"),
+    run(_url, dom) {
+      const groupSelect = dom.querySelector(`md-autocomplete[md-floating-label="\xD5pper\xFChm"] input`);
+      if (groupSelect && !isAlreadyApplied(groupSelect)) {
+        groupSelect.addEventListener("change", () => {
+          setTimeout(() => updateRJAParameters(groupSelect.value), 200);
+        });
+        addAppliedMarker(groupSelect);
+      }
+      const groupSelectOptions = [...dom.querySelectorAll(`md-option[ng-value="studentGroup"]`)];
+      if (groupSelectOptions.length && !isAlreadyApplied(groupSelectOptions[0])) {
+        groupSelectOptions.forEach((option) => {
+          option.addEventListener("click", () => {
+            setTimeout(() => updateRJAParameters(groupSelect?.value ?? ""), 200);
+          });
+        });
+        addAppliedMarker(groupSelectOptions[0]);
+      }
+    }
+  });
+  function updateRJAParameters(group) {
+    if (typeof group === "object" && group?.nameEt) group = group.nameEt;
+    const year = parseInt(group.match(/\d+/)?.[0] ?? "0") + 2e3;
+    const startDate = new Date(year, 7, 1);
+    const oppetoetus = isFeatureEnabled("rja.oppetoetus");
+    const rjaEntryTypes = oppetoetus ? [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0] : [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
+        const isChecked = input.getAttribute("aria-checked") === "true" ? 1 : 0;
+        if (isChecked ^ rjaEntryTypes[index]) input.click();
+      });
+    }
+    const dateInput = document.querySelector(`[ng-model="criteria.from"] input`);
+    if (dateInput) {
+      dateInput.click();
+      dateInput.value = "";
+      simulateTyping(dateInput, startDate.toLocaleDateString("et", { day: "2-digit", month: "2-digit", year: "numeric" }));
+    }
+    if (oppetoetus) {
+      const endDate = new Date((/* @__PURE__ */ new Date()).getFullYear() - 1, 11, 31);
+      const dateInput2 = document.querySelector(`[ng-model="criteria.thru"] input`);
+      if (dateInput2) {
+        dateInput2.click();
+        dateInput2.value = "";
+        simulateTyping(dateInput2, endDate.toLocaleDateString("et", { day: "2-digit", month: "2-digit", year: "numeric" }));
+      }
+    }
+    document.querySelector(`[ng-model="criteria.studyYear"]`)?.click();
+    setTimeout(() => {
+      document.querySelector(`.md-select-menu-container.md-active.md-clickable md-option`)?.click();
+    }, 120);
+  }
+
+  // src/modules/rja/summaryColumns.js
+  registerFeature({
+    id: "rja.summaryColumns",
+    label: "RJA: negatiivsete hinnete kokkuv\xF5te",
+    description: "Lisab r\xFChmajuhataja aruandesse negatiivsete perioodi- ja l\xF5puhinnete arvu ning protsendi veerud.",
+    defaultEnabled: true,
+    settings: [
+      {
+        id: "rja.oppetoetusDownload",
+        label: "RJA: lae aruanne alla JSON-ina",
+        description: "Laeb r\xFChmajuhataja aruande automaatselt alla JSON-failina (vajalik \xF5ppetoetuse pingeridade jaoks).",
+        defaultEnabled: false
+      }
+    ]
+  });
+  addXHRInterceptor(
+    (url) => url.includes("hois_back/reports/studentgroupteacher"),
+    (data) => {
+      if (!isFeatureEnabled("rja.oppetoetusDownload")) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+      const fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]')?.value ?? "class-teacher-report";
+      a.download = `${fileName}.json`;
+      a.click();
+    }
+  );
+  registerFeatureHandler({
+    featureId: "rja.summaryColumns",
+    match: (url) => url.includes("reports/studentgroupteacher"),
+    run(_url, dom) {
+      const table = dom.querySelector(".student-group-teacher-table");
+      const isLoaded = table?.querySelector("tbody tr:first-child td:nth-child(2) span:not([class])");
+      if (isLoaded && !isAlreadyApplied(table)) {
+        addSummaryDataToRJA(table);
+        addAppliedMarker(table);
+      }
+    }
+  });
+  var NEW_COLUMNS = 4;
+  var PERIOD_CLASSIFIER = "R";
+  var FINAL_CLASSIFIER = "L";
+  var NEGATIVE_CODES = ["MA", "X", "1", "2"];
+  function addSummaryDataToRJA(table) {
+    const report = getCurrentClassTeacherReport();
+    if (!report) return;
+    const studentGradesMap = /* @__PURE__ */ new Map();
+    report.students.forEach((student) => {
+      let totalFinal = 0, totalPeriod = 0, negFinal = 0, negPeriod = 0;
+      student.resultColumns.forEach((col) => {
+        const results = col?.journalResult?.results;
+        if (!results?.length) return;
+        results.forEach((r) => {
+          const code = r.grade?.code ?? "";
+          const isNeg = NEGATIVE_CODES.some((n) => code.endsWith(n));
+          if (r.entryType?.endsWith(PERIOD_CLASSIFIER)) {
+            if (isNeg) negFinal++;
+            totalFinal++;
+          } else if (r.entryType?.endsWith(FINAL_CLASSIFIER)) {
+            if (isNeg) negPeriod++;
+            totalPeriod++;
+          }
+        });
+      });
+      studentGradesMap.set(student.fullname, { totalPeriod, negPeriod, totalFinal, negFinal });
+    });
+    const OFFSET = 2;
+    const headerRows = table.querySelectorAll("thead tr");
+    const summaryHeader0 = headerRows[0].querySelector("th:last-child");
+    const summaryHeader1 = headerRows[1].querySelector("th:last-child");
+    const colspan = parseInt(summaryHeader0.getAttribute("colspan"));
+    const allHeaderCells = headerRows[2].querySelectorAll("th");
+    const lastCells = Array.from(allHeaderCells).slice(-colspan);
+    const lastCellIndex = Array.from(allHeaderCells).indexOf(lastCells[0]);
+    headerRows[0].insertBefore(summaryHeader0, headerRows[0].children[1]);
+    headerRows[1].insertBefore(summaryHeader1, headerRows[1].children[1]);
+    const bodyRows = table.querySelectorAll("tbody tr");
+    lastCells.forEach((cell, ci) => {
+      headerRows[2].insertBefore(cell, headerRows[OFFSET].children[OFFSET + ci]);
+      bodyRows.forEach((row) => {
+        row.insertBefore(row.children[lastCellIndex + ci], row.children[OFFSET + ci]);
+      });
+    });
+    bodyRows.forEach((row) => {
+      const nameEl = row.children[OFFSET - 1]?.querySelector("span:not([class]):not([ng-if])");
+      const studentName = nameEl?.textContent.trim();
+      if (!studentGradesMap.has(studentName)) return;
+      const { totalPeriod, negPeriod, totalFinal, negFinal } = studentGradesMap.get(studentName);
+      const mkCell = (text) => {
+        const td = document.createElement("td");
+        td.textContent = text;
+        return td;
+      };
+      const negPeriodCell = mkCell(negPeriod);
+      const negPeriodPctCell = mkCell((negPeriod / totalPeriod * 100).toFixed(1) + "%");
+      const negFinalCell = mkCell(negFinal);
+      const negFinalPctCell = mkCell((negFinal / totalFinal * 100).toFixed(1) + "%");
+      const pct = negFinal / totalFinal * 100;
+      negFinalPctCell.style.backgroundColor = pct > 50 ? "black" : pct > 30 ? "#ff3333" : pct > 10 ? "orange" : pct > 0 ? "yellow" : "#92D293";
+      negFinalPctCell.style.color = pct > 30 ? "white" : "black";
+      const insertAt2 = OFFSET + colspan;
+      row.insertBefore(negFinalPctCell, row.children[insertAt2]);
+      row.insertBefore(negFinalCell, row.children[insertAt2]);
+      row.insertBefore(negPeriodPctCell, row.children[insertAt2]);
+      row.insertBefore(negPeriodCell, row.children[insertAt2]);
+    });
+    summaryHeader0.setAttribute("colspan", colspan + NEW_COLUMNS);
+    summaryHeader1.setAttribute("colspan", colspan + NEW_COLUMNS);
+    const insertAt = OFFSET + colspan;
+    const headers = [
+      "Neg. l\xF5puhinde %",
+      "Neg. l\xF5puhinded",
+      "Neg. perioodi %",
+      "Neg. perioodi hinded"
+    ];
+    headers.forEach((text) => {
+      const th = document.createElement("th");
+      th.textContent = text;
+      headerRows[2].insertBefore(th, headerRows[2].children[insertAt]);
+    });
+  }
+
+  // src/modules/journalList/todayJournals.js
+  registerFeature({
+    id: "journalList.todayJournals",
+    label: "T\xE4nased tunnid p\xE4evikute nimekirjas",
+    description: "Lisab p\xE4evikute nimekirja \xFClaosasse t\xE4naste tundide lingid.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "journalList.todayJournals",
+    match: (url) => url.includes("#/journals?_menu"),
+    run(_url, dom) {
+      const myJournals = dom.querySelector("#main-content > div:nth-of-type(2)");
+      if (myJournals && !isAlreadyApplied(myJournals)) {
+        const inserted = addMyJournals();
+        if (inserted) addAppliedMarker(inserted);
+      }
+    }
+  });
+  function addMyJournals() {
+    const schoolId = JSON.parse(localStorage.getItem("schoolId") ?? "null");
+    const teacherId = JSON.parse(localStorage.getItem("currentTeacherId") ?? "null");
+    if (!teacherId || !schoolId || !document.querySelector("#main-content")) return null;
+    const mainContent = document.querySelector("#main-content");
+    const container = document.createElement("div");
+    container.classList.add("layout-padding");
+    const label = document.createElement("label");
+    label.textContent = "T\xE4nased tunnid";
+    label.classList.add("md-title-small");
+    container.appendChild(label);
+    const today = /* @__PURE__ */ new Date();
+    const todayStr = today.toISOString().split("T")[0];
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(today.setDate(diff)).toISOString().split("T")[0] + "T00:00:00Z";
+    const sunday = new Date(today.setDate(diff + 6)).toISOString().split("T")[0] + "T00:00:00Z";
+    fetch(
+      `${TAHVEL_API_URL}/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
+      { headers: { accept: "application/json" } }
+    ).then((r) => r.json()).then((timetable) => {
+      const added = /* @__PURE__ */ new Set();
+      const todaysEvents = timetable.timetableEvents.filter((te) => te.journalId && te.date.startsWith(todayStr));
+      for (const te of todaysEvents) {
+        if (added.has(te.journalId)) continue;
+        added.add(te.journalId);
+        const room = te.rooms?.[0]?.roomCode ?? "";
+        const groups = te.studentGroups.map((sg) => sg.code).join(", ");
+        const link = document.createElement("a");
+        link.href = `#/journal/${te.journalId}/edit`;
+        link.textContent = `${te.nameEt} ${room} ${groups}`.trim();
+        link.style.cssText = "padding-bottom:5px;display:block";
+        container.appendChild(link);
+      }
+      if (added.size === 0) {
+        const empty = document.createElement("i");
+        empty.textContent = "T\xE4naseid p\xE4evikuid ei leitud";
+        empty.style.display = "block";
+        container.appendChild(empty);
+      }
+    });
+    mainContent.firstChild.after(container);
+    return container;
+  }
 
   // src/datasets/RoomDetails.js
   var RoomDetails = [
@@ -128,6 +1166,87 @@
     { roomNumber: "B512", seats: "8", computers: "8", area: "24", board: "", os: "OS X" },
     { roomNumber: "B513", seats: "8", computers: "", area: "25", board: "", os: "" }
   ];
+
+  // src/modules/rooms/seatInfo.js
+  registerFeature({
+    id: "rooms.seatInfo",
+    label: "Ruumide lisainfo (arvutid, pindala, tahvel, OS)",
+    description: "Lisab vabade ruumide tabelisse arvutite arvu, pindala, tahvli ja operatsioonis\xFCsteemi veerud.",
+    defaultEnabled: true
+  });
+  var roomsObserver = null;
+  registerFeatureHandler({
+    featureId: "rooms.seatInfo",
+    match: (url) => url.includes("#/lessonplans/rooms") || location.hash.startsWith("#/lessonplans/rooms"),
+    run() {
+      if (roomsObserver) return;
+      roomsObserver = observeTargetChange(document.body, () => {
+        injectSeatInfoToColumn(RoomDetails);
+      });
+    },
+    cleanup() {
+      if (roomsObserver) {
+        roomsObserver.disconnect();
+        roomsObserver = null;
+      }
+    }
+  });
+  function cloneCellStyle(fromEl, toEl) {
+    const s = window.getComputedStyle(fromEl);
+    toEl.style.padding = s.padding;
+    toEl.style.font = s.font;
+    toEl.style.verticalAlign = s.verticalAlign;
+    toEl.style.lineHeight = s.lineHeight;
+    toEl.style.height = s.height;
+    toEl.style.borderTop = s.borderTop;
+    toEl.style.borderBottom = s.borderBottom;
+    toEl.style.textAlign = s.textAlign;
+  }
+  function injectSeatInfoToColumn(roomData) {
+    const table = document.querySelector("table.md-table");
+    const firstRow = table?.querySelector("tbody tr");
+    const headerRow = table?.querySelector("thead tr");
+    if (!table || !firstRow) return;
+    if (!isAlreadyApplied(headerRow)) {
+      const insertHeader = (text, position, ref2) => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headerRow.insertBefore(th, headerRow.children[position]);
+        cloneCellStyle(ref2, th);
+      };
+      const ref = headerRow.children[2];
+      insertHeader("Arvuteid", 3, ref);
+      insertHeader("Pindala", 4, ref);
+      insertHeader("Tahvel", 5, ref);
+      insertHeader("OS", 6, ref);
+      addAppliedMarker(headerRow);
+    }
+    if (isAlreadyApplied(firstRow)) return;
+    const headerCells = table.querySelectorAll("thead th");
+    const headers = Array.from(headerCells).map(
+      (th) => th.textContent.trim().replace(/\s+/g, "").toLowerCase()
+    );
+    const roomColIndex = headers.findIndex((t) => t === "ruum");
+    const seatsColIndex = headers.findIndex((t) => t === "kohtadearv") - 4;
+    table.querySelectorAll("tbody tr").forEach((row) => {
+      const cells = row.querySelectorAll("td");
+      const roomText = cells[roomColIndex]?.textContent.trim() ?? "";
+      const match = roomData.find((r) => r.roomNumber === roomText);
+      if (match && seatsColIndex >= 0) cells[seatsColIndex].textContent = String(match.seats);
+      const ref = row.children[2];
+      const insertCell = (value, position) => {
+        const td = document.createElement("td");
+        td.textContent = value ?? "";
+        row.insertBefore(td, row.children[position]);
+        cloneCellStyle(ref, td);
+      };
+      insertCell(match?.computers, 3);
+      insertCell(match?.area ? `${match.area}m\xB2` : "", 4);
+      insertCell(match?.board, 5);
+      insertCell(match?.os, 6);
+    });
+    addAppliedMarker(firstRow);
+  }
 
   // src/auth/msal.js
   var Msal = class {
@@ -787,1081 +1906,58 @@
 
   // src/modules/teachers.js
   if (typeof GM_log === "function") console.log = GM_log;
-  (function() {
-    "use strict";
-    console.log("Tahvel Customization script started");
-    const TAHVEL_API_URL = window.location.origin + "/hois_back";
-    let oppetoetus = false;
-    const style = document.createElement("style");
-    style.textContent = `
-        /* Hinnete dropdown oleks pikem*/
-        md-select-menu, md-select-menu md-content {
-            max-height: 300px;
-        }
-        /* r\xFChmajuhataja aruande tabelis nimed scrolliks kaasa */
-        .tertiary-table student-group-teacher-table tbody td:nth-child(2) {
-            position: sticky;
-            left: 0;
-            background: white; /* Prevents content from being hidden under scrolling elements */
-            z-index: 2; /* Ensures it stays above other cells */
-        }
-    `;
-    document.head.appendChild(style);
-    let currentStudent = null;
-    let currentClassTeacherReport = null;
-    let currentStudentModules = null;
-    observeTargetChange(document.body, async () => {
-      let firstPath = window.location.href.match(/#\/([^\?\/]*)/)?.[1];
+  var style = document.createElement("style");
+  style.textContent = `
+  /* Hinnete dropdown oleks pikem */
+  md-select-menu, md-select-menu md-content {
+    max-height: 300px;
+  }
+  /* r\xFChmajuhataja aruande tabelis nimed scrolliks kaasa */
+  .tertiary-table student-group-teacher-table tbody td:nth-child(2) {
+    position: sticky;
+    left: 0;
+    background: white;
+    z-index: 2;
+  }
+`;
+  document.head.appendChild(style);
+  registerFeature({
+    id: "ui.pageTitle",
+    label: "Lehe pealkiri navigatsioonist",
+    description: "Uuendab brauseri vahelehe pealkirja viimase navigatsioonisamba teksti p\xF5hjal.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "ui.pageTitle",
+    match: () => true,
+    run() {
+      const firstPath = window.location.href.match(/#\/([^\?\/]*)/)?.[1];
       let id = window.location.href.match(/\/(\d+)\//)?.[1] ?? "";
       id = id.length > 0 ? ` #${id}` : "";
-      let lastBreadcrumb = document.querySelector("#breadcrumb-wrapper > span:last-child")?.textContent.trim() || firstPath || "Tahvel";
+      const lastBreadcrumb = document.querySelector("#breadcrumb-wrapper > span:last-child")?.textContent.trim() || firstPath || "Tahvel";
       document.title = lastBreadcrumb + id;
-      if (window.location.href.indexOf("journal") > -1) {
-        const journalTableRows = document.querySelectorAll(".tahvel-table tr");
-        if (journalTableRows?.length > 2 && !isAlreadyApplied(journalTableRows[1])) {
-          console.log("In journal, add average grade column");
-          addAverageGradeColumn();
-          journalEntryTooltips();
-          columnBackgroundColors();
-          addAppliedMarker(journalTableRows[1]);
-        }
-        let homeworkDesc = document.querySelector("[ng-model='journalEntry.homework']");
-        if (homeworkDesc && !isAlreadyApplied(homeworkDesc)) {
-          console.log("In journal edit, add homework description listener");
-          journalEntryNotifyStudent(homeworkDesc);
-        }
-        let batchGrade = document.querySelector(".mass-grade");
-        console.log(batchGrade);
-        if (batchGrade && batchGrade.textContent.includes("Hinde korraga") && !isAlreadyApplied(batchGrade)) {
-          journalEntryBatchAbsent(batchGrade);
-          addAppliedMarker(batchGrade);
-        }
-      }
-      if (window.location.href.indexOf("students") > -1) {
-        let table = document.querySelector(".md-table");
-        let marker = document.querySelector(".md-table tbody > tr > td:nth-child(1)");
-        if (table && !isAlreadyApplied(marker)) {
-          console.log("In students, append age to PIN");
-          appendAgeToPin();
-          addAppliedMarker(marker);
-        }
-      }
-      let studentId = window.location.href.match(/students\/(\d+)/)?.[1];
-      if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='Sooritamise j\xE4rjekorras']`)) {
-        let table = document.querySelector(`[ng-show="resultsCurrentNavItem === 'student.inOrderOfPassing'"]`);
-        let tableRows = table.querySelectorAll("tbody tr");
-        if (table && tableRows.length > 5 && !isAlreadyApplied(table)) {
-          negativeResultsToolsInStudentProfile(table, studentId);
-          addAppliedMarker(table);
-        }
-      }
-      if (/students\/.*\/results/.test(window.location.href) && document.querySelector(`.md-active[aria-label='\xD5ppekava t\xE4itmine']`)) {
-        let firstModule = document.querySelector(".hois-collapse-parent div:first-of-type > span");
-        if (firstModule && !isAlreadyApplied(firstModule)) {
-          console.log(
-            "In student profile, add module and journal links",
-            currentStudent?.id != studentId,
-            currentStudent?.id,
-            studentId
-          );
-          if (currentStudent?.id == studentId) {
-            addAppliedMarker(firstModule);
-            studentProfileModuleAndJournalLinks(studentId);
-          }
-        }
-      }
-      if (window.location.href.indexOf("reports/studentgroupteacher") > -1) {
-        let groupSelect = document.querySelector(`md-autocomplete[md-floating-label="\xD5pper\xFChm"] input`);
-        if (groupSelect && !isAlreadyApplied(groupSelect)) {
-          console.log("In R\xFChmajuhendaja aruanne, update parameters after group selection");
-          groupSelect.addEventListener("change", () => {
-            setTimeout(() => {
-              updateRJAParameters(groupSelect.value);
-            }, 200);
-          });
-          addAppliedMarker(groupSelect);
-        }
-        let groupSelectOptions = [...document.querySelectorAll(`md-option[ng-value="studentGroup"]`)];
-        if (groupSelectOptions.length && !isAlreadyApplied(groupSelectOptions[0])) {
-          console.log("In R\xFChmajuhendaja aruanne, update parameters after group selection");
-          groupSelectOptions.forEach((option) => {
-            option.addEventListener("click", () => {
-              setTimeout(() => {
-                updateRJAParameters(groupSelect.value);
-              }, 200);
-            });
-          });
-          addAppliedMarker(groupSelectOptions[0]);
-        }
-        let table = document.querySelector(".student-group-teacher-table");
-        let isTableLoaded = table && table.querySelector("tbody tr:first-child td:nth-child(2) span:not([class])");
-        if (isTableLoaded && !isAlreadyApplied(table)) {
-          console.log("In R\xFChmajuhendaja aruanne, add summary data to table");
-          addSummaryDataToRJA(table);
-          addAppliedMarker(table);
-        }
-      }
-      if (window.location.href.indexOf("#/journals?_menu") > -1) {
-        let myJournals = document.querySelector("#main-content > div:nth-of-type(2)");
-        if (myJournals && !isAlreadyApplied(myJournals)) {
-          console.log("In journals list, add today's journals first");
-          myJournals = addMyJournals();
-          if (myJournals) addAppliedMarker(myJournals);
-        }
-      }
-      if (location.hash.startsWith("#/lessonplans/rooms")) {
-        observeTargetChange(document.body, () => {
-          injectSeatInfoToColumn(RoomDetails);
-        });
-      }
-      if (["/results", "/myResults"].some((page) => window.location.hash.includes(page))) {
-        if (!document.getElementById("grade-history-marker")) {
-          await gradeHistory();
-        }
-      } else {
-        document.getElementById("grade-history-marker")?.remove();
-      }
-    });
-    function observeTargetChange(targetNode, callback) {
-      const observer = new MutationObserver((mutationsList, observer2) => {
-        for (let mutation of mutationsList) {
-          if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-            observer2.disconnect();
-            callback();
-            observer2.observe(targetNode, { childList: true, subtree: true });
-            return;
-          }
-        }
-      });
-      observer.observe(targetNode, { childList: true, subtree: true });
-      return observer;
     }
-    function addAppliedMarker(element) {
-      if (!element) return;
-      element.dataset.userscriptApplied = true;
-    }
-    function isAlreadyApplied(element) {
-      if (!element) return false;
-      return element.dataset.userscriptApplied === "true";
-    }
-    const gradePalette = {
-      5: "#b3ffb3",
-      // Light green
-      4: "#b3ffb3",
-      // Light green
-      3: "#ffffb3",
-      // Light yellow
-      2: "#ffb3b3",
-      // Light red
-      1: "#ffb3b3",
-      // Light red
-      0: "#ffb3b3"
-      // Light red
-    };
-    function calculateAverageGrade(grades) {
-      let total = 0;
-      let count = 0;
-      grades.forEach((grade) => {
-        let lastGrade = grade.trim().split("/").pop().trim();
-        if (lastGrade === "MA" || lastGrade === "X") lastGrade = "0";
-        const parsedGrade = parseFloat(lastGrade);
-        if (!isNaN(parsedGrade)) {
-          total += parsedGrade;
-          count++;
-        }
-      });
-      const averageGrade = count > 0 ? (total / count).toFixed(1) : "0.0";
-      return [averageGrade, total];
-    }
-    function addAverageGradeColumn() {
-      const observer = new MutationObserver(() => {
-        const gradeTable = document.querySelector("#studentTable");
-        if (gradeTable) {
-          observer.disconnect();
-          console.log("Found table!");
-          const tableHeaders = gradeTable.querySelectorAll(
-            '.tahvel-table th.header-cell:not([style*="background-color: rgb(224, 231, 255)"]):not([style*="background-color: rgb(249, 168, 212)"])'
-          );
-          const periodGradeHeaders = gradeTable.querySelectorAll(
-            '.tahvel-table th[style*="background-color: rgb(224, 231, 255)"]'
-          );
-          const finalGradeHeader = gradeTable.querySelector('.tahvel-table th[style*="background-color: rgb(249, 168, 212)"]');
-          const gradeColumnIndices = Array.from(tableHeaders).map((th) => th.cellIndex);
-          let periodGradeColumnIndices = Array.from(periodGradeHeaders).map((th) => th.cellIndex);
-          console.log(periodGradeColumnIndices);
-          let usedFinalGradeAsPeriodGrade = false;
-          if (periodGradeColumnIndices.length === 0) {
-            if (finalGradeHeader) {
-              periodGradeColumnIndices = [finalGradeHeader.cellIndex];
-              usedFinalGradeAsPeriodGrade = true;
-            } else {
-              periodGradeColumnIndices = [gradeTable.querySelectorAll(".tahvel-table thead th").length - 1];
-              usedFinalGradeAsPeriodGrade = true;
-            }
-          }
-          console.log("Period grade columns", periodGradeColumnIndices);
-          const rows = gradeTable.querySelectorAll(".tahvel-table tr");
-          const headerRow = rows[0];
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Keskmine hinne"]')].forEach(
-            (header) => header.remove()
-          );
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Hinnete summa"]')].forEach((header) => header.remove());
-          [...gradeTable.querySelectorAll('.tahvel-table th[aria-label*="Perioodide hinded"]')].forEach(
-            (header) => header.remove()
-          );
-          for (let i = 0; i < periodGradeColumnIndices.length; i++) {
-            const narrowColumnHeader = document.createElement("th");
-            narrowColumnHeader.textContent = "Keskm.";
-            narrowColumnHeader.setAttribute("aria-label", "Keskmine hinne");
-            narrowColumnHeader.style.width = "20px";
-            narrowColumnHeader.style.padding = "0 2px";
-            narrowColumnHeader.style.backgroundColor = "#e2e4f4";
-            headerRow.insertBefore(narrowColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
-            const totalColumnHeader = document.createElement("th");
-            totalColumnHeader.textContent = "Summa";
-            totalColumnHeader.setAttribute("aria-label", "Hinnete summa");
-            totalColumnHeader.style.width = "20px";
-            totalColumnHeader.style.padding = "0 2px";
-            totalColumnHeader.style.backgroundColor = "#e2e4f4";
-            headerRow.insertBefore(totalColumnHeader, headerRow.children[periodGradeColumnIndices[i] + i * 2]);
-          }
-          if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
-            const periodGradesHeader = document.createElement("th");
-            periodGradesHeader.textContent = "Perioodide hinded";
-            periodGradesHeader.setAttribute("aria-label", "Perioodide hinded");
-            periodGradesHeader.style.width = "20px";
-            periodGradesHeader.style.padding = "0 2px";
-            periodGradesHeader.style.backgroundColor = "#f7b0c8";
-            headerRow.insertBefore(periodGradesHeader, finalGradeHeader);
-          }
-          let totalColumnsAndScores = [];
-          rows.forEach((row, rowIndex) => {
-            if (rowIndex === 0) return;
-            row.addEventListener("mouseover", function() {
-              this.style.outline = "2px solid #000";
-              this.style.outlineOffset = "-2px";
-            });
-            row.addEventListener("mouseout", function() {
-              this.style.outline = "unset";
-            });
-            let grades = [];
-            let periodGrades = [];
-            for (let i = 0; i < periodGradeColumnIndices.length; i++) {
-              grades[i] = [];
-            }
-            let currentPeriodIndex = 0;
-            gradeColumnIndices.forEach((columnIndex) => {
-              if (columnIndex > periodGradeColumnIndices[currentPeriodIndex]) {
-                currentPeriodIndex++;
-              }
-              if (currentPeriodIndex < periodGradeColumnIndices.length) {
-                const gradeCell = row.querySelectorAll("td")[columnIndex];
-                const gradeText = gradeCell?.textContent?.trim() ?? "";
-                grades[currentPeriodIndex].push(gradeText);
-              }
-            });
-            periodGradeColumnIndices.forEach((columnIndex, index) => {
-              const gradeCell = row.querySelectorAll("td")[columnIndex];
-              const gradeText = gradeCell?.textContent?.trim() ?? "";
-              periodGrades.push(gradeText.trim().split("/").pop().trim());
-            });
-            for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
-              const [averageGrade, totalScore] = calculateAverageGrade(grades[pgIndex]);
-              const narrowColumnCell = document.createElement("td");
-              narrowColumnCell.style.width = "20px";
-              narrowColumnCell.style.padding = "0 2px";
-              narrowColumnCell.textContent = averageGrade;
-              narrowColumnCell.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
-              narrowColumnCell.style.backgroundColor = gradePalette[parseInt(averageGrade)] || "#fff";
-              row.insertBefore(narrowColumnCell, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
-              const totalColumn = document.createElement("td");
-              totalColumn.style.width = "20px";
-              totalColumn.style.padding = "0 2px";
-              totalColumn.textContent = totalScore;
-              totalColumn.title = row.querySelectorAll("td")?.[1]?.textContent.split(",")?.[0]?.trim() ?? "";
-              if (totalColumnsAndScores[pgIndex] === void 0) {
-                totalColumnsAndScores[pgIndex] = [];
-              }
-              totalColumnsAndScores[pgIndex].push([totalColumn, totalScore]);
-              row.insertBefore(totalColumn, row.children[periodGradeColumnIndices[pgIndex] + pgIndex * 2]);
-            }
-            if (finalGradeHeader && !usedFinalGradeAsPeriodGrade) {
-              const periodGradeCell = document.createElement("td");
-              periodGradeCell.style.padding = "0 2px";
-              periodGradeCell.textContent = periodGrades?.join(" / ") ?? "";
-              row.insertBefore(periodGradeCell, row.children[finalGradeHeader.cellIndex - 1]);
-            }
-          });
-          for (let pgIndex = 0; pgIndex < periodGradeColumnIndices.length; pgIndex++) {
-            const secondBestTotalScore = totalColumnsAndScores[pgIndex].map(([totalColumn, totalScore]) => totalScore).sort((a, b) => b - a)[1];
-            totalColumnsAndScores[pgIndex].forEach(([totalColumn, totalScore]) => {
-              const normalizedTotalScore = totalScore / secondBestTotalScore;
-              let color = "";
-              if (normalizedTotalScore > 0.6)
-                color = `rgb(${255 - normalizedTotalScore * 76}, 255, ${255 - normalizedTotalScore * 76})`;
-              else color = `rgb(255, ${255 - normalizedTotalScore * 76}, ${255 - normalizedTotalScore * 76})`;
-              totalColumn.style.backgroundColor = color || "#fff";
-            });
-          }
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-    function columnBackgroundColors() {
-      let coloredColumns = {};
-      [...document.querySelectorAll(".tahvel-table thead th.bordered")].filter((h) => h.style.cssText.includes("background:") && !h.style.cssText.startsWith("background: rgb(250, 250, 250);")).forEach((h) => coloredColumns[Array.from(h.parentElement.children).indexOf(h)] = h.style.cssText.split(";")[0]);
-      Object.entries(coloredColumns).forEach(([columnIndex, bg]) => {
-        document.querySelectorAll(`.tahvel-table tbody tr td:nth-child(${Number(columnIndex) + 1})`).forEach((td) => {
-          const rgbValues = bg.match(/\d+/g).map(Number);
-          let alpha = Math.min(...rgbValues) < 120 ? 0.2 : 0.5;
-          td.style.background = `rgba(${rgbValues[0]}, ${rgbValues[1]}, ${rgbValues[2]}, ${alpha})`;
-        });
-      });
-    }
-    async function journalEntryTooltips() {
-      let journalId = window.location.href.match(/journal\/(\d+)/)[1];
-      if (!journalId) {
-        return;
+  });
+  registerFeature({
+    id: "gradeHistory",
+    label: "Hinnete ajaloo graafik",
+    description: "N\xE4itab \xF5pilase hinnete ajalugu graafikul profiililehel.",
+    defaultEnabled: true
+  });
+  registerFeatureHandler({
+    featureId: "gradeHistory",
+    match: () => ["/results", "/myResults"].some((p) => window.location.hash.includes(p)),
+    async run() {
+      if (!document.getElementById("grade-history-marker")) {
+        await gradeHistory();
       }
-      let entryDOMs = document.querySelectorAll(`[ng-if^="journalEntry.entryType.code"]`);
-      if (entryDOMs.length === 0) {
-        return;
-      }
-      let table = entryDOMs[0];
-      while (table.tagName !== "TABLE") {
-        table = table.parentElement;
-      }
-      let tableBody = table?.querySelector("tbody");
-      let headerRow = table.querySelector("thead tr");
-      let response1 = await fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntry?lang=ET&page=0&size=100`, {
-        headers: {
-          "accept": "application/json, text/plain, */*",
-          "accept-language": "en-US,en;q=0.9",
-          "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Microsoft Edge";v="122"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": '"Windows"',
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "x-requested-with": "XMLHttpRequest"
-        },
-        referrer: `${window.location.origin}/`,
-        referrerPolicy: "strict-origin-when-cross-origin",
-        body: null,
-        method: "GET",
-        mode: "cors",
-        credentials: "include"
-      });
-      let dataEntries = await response1.json();
-      let response2 = await fetch(`${TAHVEL_API_URL}/journals/${journalId}/journalEntriesByDate?allStudents=false`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-          "Accept": "application/json, text/plain, */*",
-          "Accept-Language": "en-US,en;q=0.5",
-          "X-Requested-With": "XMLHttpRequest",
-          "Sec-Fetch-Dest": "empty",
-          "Sec-Fetch-Mode": "cors",
-          "Sec-Fetch-Site": "same-origin",
-          "Pragma": "no-cache",
-          "Cache-Control": "no-cache"
-        },
-        referrer: `${window.location.origin}/`,
-        method: "GET",
-        mode: "cors",
-        credentials: "include"
-      });
-      let journalEntries = await response2.json();
-      let domIndex = 0;
-      let skipHeaders = ["Nr", "\xD5ppija, \xD5pper\xFChm", "Keskm.", "Summa"];
-      journalEntries.forEach((dateEntry, entryIndex) => {
-        domIndex++;
-        let content = headerRow.children[domIndex].textContent;
-        while (skipHeaders.includes(content)) {
-          domIndex++;
-          content = headerRow.children[domIndex].textContent;
-        }
-        let entry = dataEntries.content.find((dataEntry) => dataEntry.id === dateEntry.id);
-        let el = entryDOMs[entryIndex];
-        let entryType = SissekandedEnum[entry.entryType];
-        if (entry.nameEt !== entryType) entryType += ": " + entry.nameEt;
-        let tooltipContent = `<b>${entryType}</b><br>${entry.content?.replaceAll("\n", "<br>") ?? ""}`;
-        if (entry.homework) {
-          let duedate = entry.homeworkDuedate ? new Date(entry.homeworkDuedate).toLocaleDateString("et") : "";
-          tooltipContent += `<br><br><b>Kodut\xF6\xF6 ${duedate}</b><br><br>${entry.homework?.replaceAll("\n", "<br>") ?? ""}`;
-        }
-        let tooltip = createTooltip(el, tooltipContent);
-        el.addEventListener("mousemove", (event) => {
-          tooltip.style.display = "block";
-          tooltip.style.top = event.clientY + 20 + window.scrollY + "px";
-          tooltip.style.left = event.clientX - el.getBoundingClientRect().width / 2 + "px";
-        });
-        el.addEventListener("mouseout", () => {
-          if (tooltip.style.display === "block") tooltip.style.display = "none";
-        });
-        let closestTH = el.parentElement;
-        while (closestTH && closestTH.tagName !== "TH") {
-          closestTH = closestTH.parentElement;
-        }
-        for (let i = 0; i < tableBody.children.length; i++) {
-          let el2 = tableBody.children[i].children[domIndex].querySelector("div.layout-row > div");
-          if (!el2) continue;
-          el2.addEventListener("mousemove", (event) => {
-            tooltip.style.display = "block";
-            tooltip.style.top = event.clientY + 46 + window.scrollY + "px";
-            tooltip.style.left = event.clientX - el2.getBoundingClientRect().width / 2 + "px";
-          });
-          el2.addEventListener("mouseout", () => {
-            if (tooltip.style.display === "block") tooltip.style.display = "none";
-          });
-        }
-      });
-      function createTooltip(element, content) {
-        let clone;
-        if (content === void 0) {
-          clone = element.cloneNode(true);
-        } else {
-          clone = document.createElement("div");
-          clone.innerHTML = content;
-        }
-        clone.style.display = "none";
-        clone.style.position = "absolute";
-        clone.style.zIndex = 1e3;
-        clone.style.backgroundColor = "white";
-        clone.style.padding = "5px";
-        clone.style.maxWidth = "500px";
-        clone.style.pointerEvents = "none";
-        document.body.appendChild(clone);
-        return clone;
-      }
+    },
+    cleanup() {
+      document.getElementById("grade-history-marker")?.remove();
     }
-    function journalEntryNotifyStudent(homeworkDesc) {
-      let isTestCheckbox = document.querySelector("[ng-model='journalEntry.isTest']");
-      homeworkDesc.addEventListener("input", () => {
-        if (isTestCheckbox.getAttribute("aria-checked") === (homeworkDesc.value.trim().length > 0 ? "false" : "true")) {
-          isTestCheckbox.click();
-        }
-      });
-      addAppliedMarker(homeworkDesc);
-      let entryTypeOptions = document.querySelectorAll(`[value^="SISSEKANNE_"]`);
-      entryTypeOptions.forEach((option) => {
-        option.addEventListener("click", () => {
-          let hasHomeworkDescription = homeworkDesc.value.trim().length > 0;
-          if (isTestCheckbox.getAttribute("aria-checked") === (option.value === "SISSEKANNE_H" || hasHomeworkDescription ? "false" : "true")) {
-            isTestCheckbox.click();
-          }
-        });
-      });
-    }
-    function journalEntryBatchAbsent(siblingContainer) {
-      let batchAbsent = document.createElement("a");
-      batchAbsent.href = "#";
-      batchAbsent.textContent = " | M\xE4rgi k\xF5ik puudujaks";
-      batchAbsent.style.color = "blue";
-      batchAbsent.style.cursor = "pointer";
-      batchAbsent.addEventListener("click", (event) => {
-        event.preventDefault();
-        let absentCheckboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
-        let allChecked = absentCheckboxes.every((btn) => btn.matches(":has(div.checked)") === true);
-        absentCheckboxes.forEach((btn) => {
-          if (allChecked == true) {
-            if (btn.matches(":has(div.checked)") === true) {
-              btn.click();
-            }
-          } else {
-            if (btn.matches(":has(div.checked)") === false) {
-              btn.click();
-            }
-          }
-        });
-        absentCheckboxes = [...document.querySelectorAll('checkbox[formcontrolname="absenceWithoutReason"] button')];
-        allChecked = absentCheckboxes.every((btn) => btn.matches(":has(div.checked)") === true);
-        batchAbsent.textContent = allChecked ? " | M\xE4rgi k\xF5ik kohalolijaks" : " | M\xE4rgi k\xF5ik puudujaks";
-      });
-      siblingContainer.appendChild(batchAbsent);
-    }
-    function calculateAgeFromPin(pin) {
-      const century = parseInt(pin.substring(0, 1));
-      const year = parseInt(pin.substring(1, 3));
-      const month = parseInt(pin.substring(3, 5));
-      const day = parseInt(pin.substring(5, 7));
-      const baseYear = century === 3 || century === 4 ? 1900 : 2e3;
-      const birthDate = new Date(baseYear + year, month - 1, day);
-      const ageDifMs = Date.now() - birthDate.getTime();
-      const ageDate = new Date(ageDifMs);
-      return Math.abs(ageDate.getUTCFullYear() - 1970);
-    }
-    function appendAgeToPin() {
-      let elements = [];
-      let columnHeader = document.querySelector("[md-order-by='person.idcode']");
-      if (columnHeader) {
-        let columnNumber = Array.from(columnHeader.parentElement.children).indexOf(columnHeader);
-        elements = Array.from(
-          columnHeader.parentElement.parentElement.parentElement.querySelectorAll(
-            "tbody > tr > td:nth-child(" + (columnNumber + 1) + ")"
-          )
-        );
-      }
-      elements.forEach((element) => {
-        const pin = element.textContent;
-        const age = calculateAgeFromPin(pin);
-        element.innerHTML = `${pin} <span style="font-weight: ${age < 18 ? "bold" : "normal"}">(${age})</span>`;
-      });
-    }
-    function negativeResultsToolsInStudentProfile(table, studentId) {
-      const tableHeaders = table.querySelectorAll("thead th");
-      const tableRows = table.querySelectorAll("tbody tr");
-      let totalGrades = 0;
-      let negativeGrades = 0;
-      tableRows.forEach((row) => {
-        let type = row.querySelector("td:nth-child(2)").textContent.trim();
-        let grade = row.querySelector("td:nth-child(3)").textContent.trim();
-        if (["MA", "X", "1", "2"].includes(grade) && type === "L\xF5pptulemus") {
-          negativeGrades++;
-        }
-        if (["MA", "X", "1", "2", "3", "4", "5", "A"].includes(grade) && type === "L\xF5pptulemus") {
-          totalGrades++;
-        }
-      });
-      let negativeGradesCounter = document.createElement("span");
-      let negativeGradesPercentage = totalGrades > 0 ? negativeGrades / totalGrades * 100 : 0;
-      negativeGradesCounter.textContent = `Negatiivseid l\xF5pptulemusi: ${negativeGrades} (~${negativeGradesPercentage.toFixed(0)}%)`;
-      let onlyNegativeGradesToggle = document.createElement("button");
-      onlyNegativeGradesToggle.textContent = "N\xE4ita neg. hindeid";
-      onlyNegativeGradesToggle.classList.add("md-button", "md-raised");
-      onlyNegativeGradesToggle.style.marginRight = "10px";
-      onlyNegativeGradesToggle.dataset.active = "false";
-      onlyNegativeGradesToggle.addEventListener("click", () => {
-        let active = onlyNegativeGradesToggle.dataset.active === "true";
-        onlyNegativeGradesToggle.dataset.active = !active;
-        onlyNegativeGradesToggle.textContent = active ? "N\xE4ita neg. hindeid" : "N\xE4ita k\xF5iki hindeid";
-        if (active) {
-          tableRows.forEach((row) => {
-            row.style.display = "";
-          });
-        } else {
-          tableRows.forEach((row) => {
-            let type = row.querySelector("td:nth-child(2)").textContent.trim();
-            let grade = row.querySelector("td:nth-child(3)").textContent.trim();
-            if (!["MA", "X", "1", "2"].includes(grade) || type !== "L\xF5pptulemus") {
-              row.style.display = "none";
-            }
-          });
-        }
-      });
-      let hideColumns = [1, 3];
-      let hideColumnsToggle = document.createElement("button");
-      hideColumnsToggle.textContent = "Peida mittevajalikud veerud";
-      hideColumnsToggle.classList.add("md-button", "md-raised");
-      hideColumnsToggle.style.marginRight = "10px";
-      hideColumnsToggle.dataset.active = "false";
-      hideColumnsToggle.addEventListener("click", () => {
-        let active = hideColumnsToggle.dataset.active === "true";
-        hideColumnsToggle.dataset.active = !active;
-        hideColumnsToggle.textContent = active ? "Peida mittevajalikud veerud" : "N\xE4ita k\xF5iki veerge";
-        if (active) {
-          tableRows.forEach((row) => {
-            hideColumns.forEach((index) => {
-              row.children[index].style.display = "";
-              tableHeaders[index].style.display = "";
-            });
-          });
-        } else {
-          tableRows.forEach((row) => {
-            hideColumns.forEach((index) => {
-              row.children[index].style.display = "none";
-              tableHeaders[index].style.display = "none";
-            });
-          });
-        }
-      });
-      let journalLinkToggle = document.createElement("button");
-      journalLinkToggle.textContent = "Lisa p\xE4eviku lingid";
-      journalLinkToggle.classList.add("md-button", "md-raised");
-      journalLinkToggle.style.marginRight = "10px";
-      journalLinkToggle.addEventListener("click", () => {
-        fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
-          headers: { accept: "application/json" }
-        }).then((r) => r.json()).then((data) => {
-          tableRows.forEach((row) => {
-            let subject = row.querySelector("td:nth-child(1)").textContent.trim().toLowerCase();
-            data.forEach((journal) => {
-              if (journal.type === "journal" && subject.startsWith(journal.nameEt.toLowerCase())) {
-                let journalLink = document.createElement("button");
-                journalLink.addEventListener("click", () => {
-                  window.open(`#/journal/${journal.entityId}/edit`, "_blank");
-                });
-                journalLink.textContent = "P\xE4evik";
-                row.querySelector("td:nth-child(1)").appendChild(journalLink);
-              }
-            });
-          });
-          journalLinkToggle.disabled = true;
-        });
-      });
-      table.parentElement.insertBefore(onlyNegativeGradesToggle, table);
-      table.parentElement.insertBefore(hideColumnsToggle, table);
-      table.parentElement.insertBefore(journalLinkToggle, table);
-      table.parentElement.insertBefore(negativeGradesCounter, table);
-    }
-    async function studentProfileModuleAndJournalLinks(studentId) {
-      const curriculumVersionId = currentStudent?.curriculumVersion?.id;
-      const groupCode = currentStudent?.curriculumVersion?.code;
-      const modulesDom = document.querySelectorAll(
-        ".hois-collapse-parent div:not(.subtext):not([ng-if]):first-of-type > span"
-      );
-      const journalsDom = document.querySelectorAll(".hois-collapse-body .tahvel-table td:first-of-type > span");
-      let moduleProtocolsResponse = await fetch(
-        `${TAHVEL_API_URL}/moduleProtocols?isVocational=true&curriculumVersion=${curriculumVersionId}&lang=ET&page=0&size=75`,
-        { headers: { accept: "application/json" } }
-      );
-      let moduleProtocols = await moduleProtocolsResponse.json();
-      modulesDom.forEach((moduleDom) => {
-        let moduleName = moduleDom.textContent.trim().replace(/\s*\([^)]*\)$/, "");
-        moduleProtocols.content.filter(
-          (mp) => mp.studentGroups.includes(groupCode) && mp.curriculumVersionOccupationModules?.[0]?.nameEt === moduleName
-        ).forEach((mp) => {
-          let moduleLink = document.createElement("a");
-          moduleLink.href = `#/moduleProtocols/module/${mp.id}/edit`;
-          moduleLink.target = "_blank";
-          moduleLink.textContent = mp.id;
-          moduleLink.style.paddingRight = "5px";
-          moduleLink.style.fontWeight = "bold";
-          moduleLink.style.color = "var(--color-new-primary-blue-1)";
-          moduleLink.style.textDecoration = "none";
-          moduleDom.appendChild(moduleLink);
-        });
-        let moduleData = currentStudentModules.curriculumModules.find((m) => m.curriculumModule.nameEt === moduleName);
-        if (moduleData) {
-          let newModuleLink = document.createElement("a");
-          newModuleLink.addEventListener("click", async () => {
-            newModuleLink.style.pointerEvents = "none";
-            newModuleLink.style.color = "gray";
-            newModuleLink.textContent = "Laeb...";
-            let studyYearResponse = await fetch(`${TAHVEL_API_URL}/school/studyYear/current-or-next-dto`, {
-              credentials: "include",
-              headers: { Accept: "application/json, text/plain, */*" },
-              method: "GET"
-            });
-            let studyYear = await studyYearResponse.json();
-            let studentsResponse = await fetch(
-              `${TAHVEL_API_URL}/moduleProtocols/occupationModule/${studyYear.id}/${moduleData.id}`,
-              { credentials: "include", headers: { Accept: "application/json, text/plain, */*" }, method: "GET" }
-            );
-            let students = await studentsResponse.json();
-            let moduleName2 = moduleData.curriculumModule.nameEt;
-            if (!(currentStudent.curriculumVersion.id && studyYear.id && students.teacher.id, moduleData.id)) {
-              console.log("Module data", moduleData);
-              console.log("Students data", students);
-              console.log("Study year data", studyYear);
-              console.log("Current student data", currentStudent);
-              alert("Tekkis viga, vaata konsooli.");
-              newModuleLink.style.pointerEvents = "";
-              newModuleLink.style.color = "var(--color-new-primary-blue-1)";
-              newModuleLink.textContent = "Uus protokoll";
-              return;
-            }
-            let confirmText = `Oled loomas uut protokolli moodulile ${moduleName2}. Moodulile m\xE4\xE4ratakse \xF5ppeaasta ${studyYear.nameEt}, \xF5petajaks ${students.teacher.nameEt} ja lisatakse ${students.occupationModuleStudents.length} \xF5pilast.`;
-            if (confirm(confirmText)) {
-              let newModuleResponse = await fetch(`${TAHVEL_API_URL}/moduleProtocols`, {
-                credentials: "include",
-                headers: {
-                  "Accept": "application/json, text/plain, */*",
-                  "Content-Type": "application/json;charset=utf-8",
-                  "X-XSRF-TOKEN": getCsrfToken()
-                },
-                body: JSON.stringify({
-                  protocolVdata: {
-                    curriculumVersionOccupationModule: moduleData.id,
-                    curriculumVersion: currentStudent.curriculumVersion.id,
-                    studyYear: studyYear.id,
-                    teacher: students.teacher.id
-                  },
-                  protocolStudents: students.occupationModuleStudents.map((s) => ({ studentId: s.studentId })),
-                  type: "module",
-                  isBasic: false,
-                  isSecondary: false,
-                  isHigher: false,
-                  isVocational: true
-                }),
-                method: "POST"
-              });
-              let newModule = await newModuleResponse.json();
-              window.open(`#/moduleProtocols/module/${newModule.id}/edit`, "_blank");
-              newModuleLink.style.pointerEvents = "";
-              newModuleLink.style.color = "var(--color-new-primary-blue-1)";
-              newModuleLink.textContent = "Uus protokoll";
-            }
-          });
-          newModuleLink.textContent = "Uus protokoll";
-          newModuleLink.style.paddingRight = "5px";
-          newModuleLink.style.color = "var(--color-new-primary-blue-1)";
-          newModuleLink.style.textDecoration = "none";
-          newModuleLink.style.textTransform = "none";
-          newModuleLink.style.border = "1px solid var(--color-new-primary-blue-1)";
-          newModuleLink.style.whiteSpace = "nowrap";
-          moduleDom.appendChild(newModuleLink);
-        }
-      });
-      let journalsResponse = await fetch(`${TAHVEL_API_URL}/students/${studentId}/vocationalConnectedEntities`, {
-        headers: { accept: "application/json" }
-      });
-      let vocationalConnectedEntities = await journalsResponse.json();
-      journalsDom.forEach((journal) => {
-        let journalName = journal.textContent.trim().replace(/\s*\([^)]*\)$/, "");
-        vocationalConnectedEntities.filter((e) => e.type === "journal" && e.nameEt === journalName).forEach((e) => {
-          let journalLink = document.createElement("a");
-          journalLink.href = `#/journal/${e.entityId}/edit`;
-          journalLink.target = "_blank";
-          journalLink.textContent = e.entityId;
-          journalLink.style.paddingRight = "5px";
-          journal.appendChild(journalLink);
-        });
-      });
-    }
-    function updateRJAParameters(event) {
-      let group = event;
-      if (typeof group === "object" && group.nameEt) group = group.nameEt;
-      let year = parseInt(group.match(/\d+/)[0]) + 2e3;
-      let date = new Date(year, 7, 1);
-      let previousPeriodYear = (/* @__PURE__ */ new Date()).getFullYear() - 1;
-      let endDate = new Date(previousPeriodYear, 11, 31);
-      let rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-      if (oppetoetus) {
-        rjaEntryTypes = [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0];
-      }
-      for (let i = 0; i < 4; i++) {
-        document.querySelectorAll(`[ng-show="formState.showAllParameters"] md-checkbox`).forEach((input, index) => {
-          let inputState = input.getAttribute("aria-checked") === "true" ? 1 : 0;
-          if (inputState ^ rjaEntryTypes[index]) input.click();
-        });
-      }
-      let dateInput = document.querySelector(`[ng-model="criteria.from"] input`);
-      dateInput.click();
-      dateInput.value = "";
-      let startDate = date.toLocaleDateString("et", { day: "2-digit", month: "2-digit", year: "numeric" });
-      simulateTyping(dateInput, startDate, 10, 10);
-      if (oppetoetus) {
-        let dateInput2 = document.querySelector(`[ng-model="criteria.thru"] input`);
-        dateInput2.click();
-        dateInput2.value = "";
-        let endDateStr = endDate.toLocaleDateString("et", { day: "2-digit", month: "2-digit", year: "numeric" });
-        simulateTyping(dateInput2, endDateStr, 10, 10);
-      }
-      document.querySelector(`[ng-model="criteria.studyYear"]`).click();
-      setTimeout(() => {
-        document.querySelector(`.md-select-menu-container.md-active.md-clickable md-option`).click();
-      }, 120);
-    }
-    function addSummaryDataToRJA(table) {
-      const newColumnsToBeAdded = 6;
-      const periodGradeClassifier = "R";
-      const finalGradeClassifier = "L";
-      let studentGradesMap = /* @__PURE__ */ new Map();
-      currentClassTeacherReport.students.forEach((student) => {
-        let totalFinalGrades = 0;
-        let totalPeriodGrades = 0;
-        let negativeFinalGrades = 0;
-        let negativePeriodGrades = 0;
-        student.resultColumns.forEach((resultColumn) => {
-          let fresult = resultColumn?.journalResult?.results;
-          if (fresult?.length) {
-            fresult.forEach((result) => {
-              if (result.entryType.endsWith(periodGradeClassifier)) {
-                if (result.grade.code.endsWith("MA") || result.grade.code.endsWith("X") || result.grade.code.endsWith("1") || result.grade.code.endsWith("2")) {
-                  negativeFinalGrades++;
-                }
-                totalFinalGrades++;
-              } else if (result.entryType.endsWith(finalGradeClassifier)) {
-                if (result.grade.code.endsWith("MA") || result.grade.code.endsWith("X") || result.grade.code.endsWith("1") || result.grade.code.endsWith("2")) {
-                  negativePeriodGrades++;
-                }
-                totalPeriodGrades++;
-              }
-            });
-          }
-        });
-        studentGradesMap.set(student.fullname, {
-          totalPeriodGrades,
-          negativePeriodGrades,
-          totalFinalGrades,
-          negativeFinalGrades
-        });
-      });
-      table = document.querySelector(".student-group-teacher-table");
-      const columnDataOffset = 2;
-      let headerRows = table.querySelectorAll("thead tr");
-      let headerSummaryColumn = headerRows[0].querySelector("th:last-child");
-      let headerSummaryColumn2 = headerRows[1].querySelector("th:last-child");
-      let colspan = parseInt(headerSummaryColumn.getAttribute("colspan"));
-      let headerCells = headerRows[2].querySelectorAll("th");
-      let lastCells = Array.from(headerCells).slice(-colspan);
-      let lastCellIndex = Array.from(headerCells).indexOf(lastCells[0]);
-      headerRows[0].insertBefore(headerSummaryColumn, headerRows[0].children[1]);
-      headerRows[1].insertBefore(headerSummaryColumn2, headerRows[1].children[1]);
-      let bodyRows = table.querySelectorAll("tbody tr");
-      lastCells.forEach((cell, ci) => {
-        headerRows[2].insertBefore(cell, headerRows[columnDataOffset].children[columnDataOffset + ci]);
-        bodyRows.forEach((row) => {
-          row.insertBefore(row.children[lastCellIndex + ci], row.children[columnDataOffset + ci]);
-        });
-      });
-      bodyRows.forEach((row) => {
-        let studentName = row.children[columnDataOffset - 1]?.querySelector("span:not([class]):not([ng-if])")?.textContent.trim();
-        if (studentGradesMap.has(studentName)) {
-          const { totalPeriodGrades, negativePeriodGrades, totalFinalGrades, negativeFinalGrades } = studentGradesMap.get(studentName);
-          let negativePeriodGradeCell = document.createElement("td");
-          negativePeriodGradeCell.textContent = negativePeriodGrades;
-          let negativePeriodGradePercentageCell = document.createElement("td");
-          negativePeriodGradePercentageCell.textContent = (negativePeriodGrades / totalPeriodGrades * 100).toFixed(1) + "%";
-          let negativeFinalGradeCell = document.createElement("td");
-          negativeFinalGradeCell.textContent = negativeFinalGrades;
-          let negativeFinalGradePercentageCell = document.createElement("td");
-          let percentage = negativeFinalGrades / totalFinalGrades * 100;
-          negativeFinalGradePercentageCell.textContent = percentage.toFixed(1) + "%";
-          negativeFinalGradePercentageCell.style.backgroundColor = percentage > 50 ? "black" : percentage > 30 ? "#ff3333" : percentage > 10 ? "orange" : percentage > 0 ? "yellow" : "#92D293";
-          negativeFinalGradePercentageCell.style.color = percentage > 30 ? "white" : "black";
-          row.insertBefore(negativeFinalGradePercentageCell, row.children[columnDataOffset + colspan]);
-          row.insertBefore(negativeFinalGradeCell, row.children[columnDataOffset + colspan]);
-          row.insertBefore(negativePeriodGradePercentageCell, row.children[columnDataOffset + colspan]);
-          row.insertBefore(negativePeriodGradeCell, row.children[columnDataOffset + colspan]);
-        }
-      });
-      headerSummaryColumn.setAttribute("colspan", colspan + newColumnsToBeAdded);
-      headerSummaryColumn2.setAttribute("colspan", colspan + newColumnsToBeAdded);
-      let negativePeriodGradeHeader = document.createElement("th");
-      negativePeriodGradeHeader.textContent = "Neg. perioodi hinded";
-      let negativePeriodGradePercentageHeader = document.createElement("th");
-      negativePeriodGradePercentageHeader.textContent = "Neg. perioodi %";
-      let negativeFinalGradeHeader = document.createElement("th");
-      negativeFinalGradeHeader.textContent = "Neg. l\xF5puhinded";
-      let negativeFinalGradePercentageHeader = document.createElement("th");
-      negativeFinalGradePercentageHeader.textContent = "Neg. l\xF5puhinde %";
-      headerRows[2].insertBefore(negativeFinalGradePercentageHeader, headerRows[2].children[columnDataOffset + colspan]);
-      headerRows[2].insertBefore(negativeFinalGradeHeader, headerRows[2].children[columnDataOffset + colspan]);
-      headerRows[2].insertBefore(negativePeriodGradePercentageHeader, headerRows[2].children[columnDataOffset + colspan]);
-      headerRows[2].insertBefore(negativePeriodGradeHeader, headerRows[2].children[columnDataOffset + colspan]);
-    }
-    function addMyJournals() {
-      const schoolId = 14;
-      const teacherId = JSON.parse(localStorage.getItem("currentTeacherId"));
-      if (!teacherId && !document.querySelector("#main-content")) {
-        return null;
-      }
-      let mainContent = document.querySelector("#main-content");
-      let myJournals = document.createElement("div");
-      myJournals.classList.add("layout-padding");
-      let label = document.createElement("label");
-      label.textContent = "T\xE4nased tunnid";
-      label.classList.add("md-title-small");
-      myJournals.appendChild(label);
-      let today = /* @__PURE__ */ new Date();
-      let todayStr = today.toISOString().split("T")[0];
-      let day = today.getDay();
-      let diff = today.getDate() - day + (day == 0 ? -6 : 1);
-      let monday = new Date(today.setDate(diff)).toISOString().split("T")[0] + "T00:00:00Z";
-      let sunday = new Date(today.setDate(diff + 6)).toISOString().split("T")[0] + "T00:00:00Z";
-      fetch(
-        `${TAHVEL_API_URL}/timetableevents/timetableByTeacher/${schoolId}?from=${monday}&lang=ET&teachers=${teacherId}&thru=${sunday}`,
-        { headers: { accept: "application/json" } }
-      ).then((r) => r.json()).then((timetable) => {
-        let alreadyAdded = [];
-        let todaysEvents = timetable.timetableEvents.filter((te) => te.journalId && te.date.startsWith(todayStr));
-        todaysEvents.forEach((te) => {
-          if (alreadyAdded.includes(te.journalId)) {
-            return;
-          }
-          alreadyAdded.push(te.journalId);
-          let room = te.rooms.length > 0 ? te.rooms[0].roomCode : "";
-          let studentGroups = te.studentGroups.map((sg) => sg.code).join(", ");
-          let journalLink = document.createElement("a");
-          journalLink.href = `#/journal/${te.journalId}/edit`;
-          journalLink.textContent = te.nameEt + " " + room + " " + studentGroups;
-          journalLink.style.paddingBottom = "5px";
-          journalLink.style.display = "block";
-          myJournals.appendChild(journalLink);
-        });
-        if (alreadyAdded.length === 0) {
-          let noEvents = document.createElement("i");
-          noEvents.textContent = "T\xE4naseid p\xE4evikuid ei leitud";
-          noEvents.style.display = "block";
-          myJournals.appendChild(noEvents);
-        }
-      });
-      mainContent.firstChild.after(myJournals);
-      return myJournals;
-    }
-    function cloneCellStyle(fromEl, toEl) {
-      const computedStyle = window.getComputedStyle(fromEl);
-      toEl.style.padding = computedStyle.padding;
-      toEl.style.font = computedStyle.font;
-      toEl.style.verticalAlign = computedStyle.verticalAlign;
-      toEl.style.lineHeight = computedStyle.lineHeight;
-      toEl.style.height = computedStyle.height;
-      toEl.style.borderTop = computedStyle.borderTop;
-      toEl.style.borderBottom = computedStyle.borderBottom;
-      toEl.style.textAlign = computedStyle.textAlign;
-    }
-    function injectSeatInfoToColumn(roomData) {
-      const table = document.querySelector("table.md-table");
-      const firstRow = table?.querySelector("tbody tr");
-      const headerRow = table?.querySelector("thead tr");
-      if (!table || !firstRow) return;
-      if (!isAlreadyApplied(headerRow)) {
-        const computersHeader = document.createElement("th");
-        computersHeader.textContent = "Arvuteid";
-        headerRow.insertBefore(computersHeader, headerRow.children[3]);
-        cloneCellStyle(headerRow.children[2], computersHeader);
-        const areaHeader = document.createElement("th");
-        areaHeader.textContent = "Pindala";
-        headerRow.insertBefore(areaHeader, headerRow.children[4]);
-        cloneCellStyle(headerRow.children[2], areaHeader);
-        const boardHeader = document.createElement("th");
-        boardHeader.textContent = "Tahvel";
-        headerRow.insertBefore(boardHeader, headerRow.children[5]);
-        cloneCellStyle(headerRow.children[2], boardHeader);
-        const osHeader = document.createElement("th");
-        osHeader.textContent = "OS";
-        headerRow.insertBefore(osHeader, headerRow.children[6]);
-        cloneCellStyle(headerRow.children[2], osHeader);
-        addAppliedMarker(headerRow);
-      }
-      if (!isAlreadyApplied(firstRow)) {
-        const rows = table.querySelectorAll("tbody tr");
-        console.log("Injecting seat info into room table");
-        const headerCells = table.querySelectorAll("thead th");
-        const headers = Array.from(headerCells).map(
-          (th) => th.textContent.trim().replace(/\n/g, "").replace(/\s+/g, " ").toLowerCase()
-        );
-        const roomColIndex = headers.findIndex((text) => text === "ruum");
-        const numberOfNewColumnsBeforeSeatsCol = 4;
-        const seatsColIndex = headers.findIndex((text) => text === "kohtadearv") - numberOfNewColumnsBeforeSeatsCol;
-        console.log("roomColIndex:", roomColIndex, "seatsColIndex:", seatsColIndex);
-        rows.forEach((row) => {
-          const cells = row.querySelectorAll("td");
-          const roomCell = cells[roomColIndex];
-          const roomText = roomCell?.textContent.trim() ?? "";
-          const match = roomData.find((r) => r.roomNumber === roomText);
-          if (match && cells[seatsColIndex] && seatsColIndex !== -1) {
-            cells[seatsColIndex].textContent = `${match.seats}`;
-          }
-          const computersCell = document.createElement("td");
-          computersCell.textContent = match?.computers ?? "";
-          row.insertBefore(computersCell, row.children[3]);
-          cloneCellStyle(row.children[2], computersCell);
-          const areaCell = document.createElement("td");
-          areaCell.textContent = match?.area ? `${match.area}m\xB2` : "";
-          row.insertBefore(areaCell, row.children[4]);
-          cloneCellStyle(row.children[2], areaCell);
-          const boardCell = document.createElement("td");
-          boardCell.textContent = match?.board ?? "";
-          row.insertBefore(boardCell, row.children[5]);
-          cloneCellStyle(row.children[2], boardCell);
-          const osCell = document.createElement("td");
-          osCell.textContent = match?.os ?? "";
-          row.insertBefore(osCell, row.children[6]);
-          cloneCellStyle(row.children[2], osCell);
-        });
-        addAppliedMarker(firstRow);
-      }
-    }
-    let xhrInterceptors = [];
-    function addXHRInterceptor(filterFn, callback) {
-      xhrInterceptors.push({ filterFn, callback });
-    }
-    const originalOpen = XMLHttpRequest.prototype.open;
-    const originalSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-      this._requestURL = url;
-      this._requestMethod = method;
-      return originalOpen.apply(this, arguments);
-    };
-    XMLHttpRequest.prototype.send = function(body) {
-      const xhrInstance = this;
-      this.addEventListener("readystatechange", function() {
-        if (xhrInstance.readyState === XMLHttpRequest.DONE) {
-          xhrInterceptors.forEach((interceptor) => {
-            if (interceptor.filterFn(xhrInstance._requestURL)) {
-              try {
-                interceptor.callback(JSON.parse(xhrInstance.responseText));
-              } catch (e) {
-                interceptor.callback(xhrInstance.responseText);
-              }
-            }
-          });
-        }
-      });
-      return originalSend.apply(this, arguments);
-    };
-    addXHRInterceptor(
-      (url) => url.includes("hois_back/changeUser") || url.includes("hois_back/user"),
-      (data) => {
-        console.log("currentTeacherId:", data.teacher);
-        if (data?.teacher) {
-          localStorage.setItem("currentTeacherId", JSON.stringify(data.teacher));
-        }
-        if (data?.school?.id) {
-          localStorage.setItem("schoolId", JSON.stringify(data.school.id));
-        }
-        if (data?.name || data?.fullname) {
-          let lastUsage = localStorage.getItem("lastUsage");
-          if (!lastUsage || Date.now() - lastUsage > 36e5) {
-            localStorage.setItem("lastUsage", Date.now());
-          }
-        }
-      }
-    );
-    addXHRInterceptor(
-      (url) => url.includes("hois_back/reports/studentgroupteacher"),
-      (data) => {
-        if (oppetoetus) {
-          let a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-          let fileName = document.querySelector('[aria-label="\xD5pper\xFChm"]').value ?? "class-teacher-report";
-          a.download = `${fileName}.json`;
-          a.click();
-        }
-        currentClassTeacherReport = data;
-      }
-    );
-    addXHRInterceptor(
-      (url) => url.match(/hois_back\/students\/\d+$/) !== null,
-      (data) => {
-        currentStudent = data;
-      }
-    );
-    addXHRInterceptor(
-      (url) => url.match(/hois_back\/students\/\d+\/vocationalResults$/),
-      (data) => {
-        currentStudentModules = data;
-      }
-    );
-  })();
-  function simulateTyping(inputElement, text, latency, interResponseTime) {
-    inputElement.value = text;
-    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  var SissekandedEnum = {
-    SISSEKANNE_EX: "Eksam",
-    SISSEKANNE_E: "E-\xF5pe",
-    SISSEKANNE_H: "Hindamine",
-    SISSEKANNE_HO: "Hoolsus",
-    SISSEKANNE_I: "Iseseisev t\xF6\xF6",
-    SISSEKANNE_C: "Kontrollt\xF6\xF6",
-    SISSEKANNE_KU: "Kursuse hinne",
-    SISSEKANNE_K: "K\xE4itumine",
-    SISSEKANNE_L: "L\xF5pptulemus",
-    SISSEKANNE_R: "Perioodi hinne",
-    SISSEKANNE_P: "Praktiline t\xF6\xF6",
-    SISSEKANNE_T: "Tund",
-    SISSEKANNE_O: "\xD5piv\xE4ljund"
-  };
-  function getCsrfToken() {
-    const match = document.cookie.match(new RegExp("(^| )XSRF-TOKEN=([^;]+)"));
-    if (match) {
-      return decodeURIComponent(match[2]);
-    }
-    return null;
-  }
+  });
+  generateMenuItems();
+  initObserver();
 
   // src/modules/reports/stipend-eligibility/normalize.js
   function normalizeGroupReport(rawGroupData, groupCode) {
