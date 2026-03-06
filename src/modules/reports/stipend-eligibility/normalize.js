@@ -57,6 +57,11 @@ export function normalizeGroupReport(rawGroupData, groupCode) {
 
       const journalId = jr.id;
       const results = Array.isArray(jr.results) ? jr.results : [];
+      const existsInJournal = jr?.existsInJournal;
+
+      // Tahvel may include curriculum journals where student is not actually in the journal.
+      // Those come as existsInJournal=false with empty results and should not affect stats.
+      if (existsInJournal === false && results.length === 0) continue;
 
       // IMPORTANT: keep the journal even if results are empty.
       // Otherwise we can't correctly count missing finals/periods or non-graded students.
@@ -111,26 +116,4 @@ function buildJournalNameMap(rawGroupData) {
   }
 
   return map;
-}
-
-/**
- * Returns true if entries are non-decreasing by entryDate (or gradeInserted fallback).
- * If true, you can safely use entries[entries.length - 1] as "last".
- */
-export function areGradeEntriesSorted(entries) {
-  if (!Array.isArray(entries) || entries.length <= 1) return true;
-
-  let prev = dateKey(entries[0]);
-  for (let i = 1; i < entries.length; i++) {
-    const cur = dateKey(entries[i]);
-    if (cur < prev) return false;
-    prev = cur;
-  }
-  return true;
-}
-
-function dateKey(e) {
-  const d = e?.entryDate ?? e?.gradeInserted ?? null;
-  const t = d ? Date.parse(d) : 0;
-  return Number.isFinite(t) ? t : 0;
 }

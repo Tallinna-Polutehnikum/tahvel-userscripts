@@ -107,6 +107,9 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
       let studentHasFinal = false;
       let studentHasPeriod = false;
       let studentHasNegativeFinal = false;
+      let journalHasPositiveFinal = false;
+      let journalHasNegativeFinal = false;
+      let journalNegativePeriodCount = 0;
 
       for (const e of j.entries) {
         // track teachers even if gradeCode missing, because it can still be useful metadata
@@ -142,10 +145,7 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
           studentHasPeriod = true;
           studentStats.totalPeriodGrades += 1;
           subj.totalPeriodGrades += 1;
-          if (isNegative(e.gradeCode)) {
-            studentStats.totalNegativePeriodGrades += 1;
-            studentStats._negativeJournalIds.add(String(journalId));
-          }
+          if (isNegative(e.gradeCode)) journalNegativePeriodCount += 1;
         }
 
         if (e.entryType === "SISSEKANNE_L") {
@@ -153,11 +153,21 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
           studentStats.totalFinalGrades += 1;
           subj.totalFinalGrades += 1;
           if (isNegative(e.gradeCode)) {
+            journalHasNegativeFinal = true;
             studentStats.totalNegativeFinalGrades += 1;
             studentHasNegativeFinal = true;
             studentStats._negativeJournalIds.add(String(journalId));
+          } else {
+            journalHasPositiveFinal = true;
           }
         }
+      }
+
+      // Positive final in the same journal supersedes negative period grades for this student.
+      const shouldSuppressNegativePeriods = journalHasPositiveFinal && !journalHasNegativeFinal;
+      if (journalNegativePeriodCount > 0 && !shouldSuppressNegativePeriods) {
+        studentStats.totalNegativePeriodGrades += journalNegativePeriodCount;
+        studentStats._negativeJournalIds.add(String(journalId));
       }
 
       if (!studentHasAnyGradeInSubject) subj.nonGradedStudents += 1;
@@ -168,11 +178,11 @@ export function aggregateGroup(normalizedGroup, state, { logger = console.warn }
       if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
 
       const shouldConsiderFinalMissing = journalHasFinal[journalId] === true;
-      if (shouldConsiderFinalMissing && !studentHasFinal) subj.studentsMissingFinal += 1;
+      if (shouldConsiderFinalMissing && studentHasAnyGradeInSubject && !studentHasFinal) subj.studentsMissingFinal += 1;
 
       // Decide if “missing” should be flagged using group-level heuristic:
-      const shouldFlagPeriod = journalHasPeriod[journalId] === true && !studentHasPeriod;
-      const shouldFlagFinal = journalHasFinal[journalId] === true && !studentHasFinal;
+      const shouldFlagPeriod = journalHasPeriod[journalId] === true && studentHasAnyGradeInSubject && !studentHasPeriod;
+      const shouldFlagFinal = journalHasFinal[journalId] === true && studentHasAnyGradeInSubject && !studentHasFinal;
 
       if (shouldFlagPeriod || shouldFlagFinal) {
         const teacherGuess = [...j.entries].reverse().find(x => x.teacher)?.teacher ?? "";

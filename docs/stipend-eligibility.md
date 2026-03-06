@@ -28,11 +28,19 @@ Subject-level:
 ## Negative grades
 KUTSEHINDAMINE_[MA, X, 1, 2] are negative.
 
+### Positive final supersedes negative period grades
+If a student has a positive (non-negative) final grade (SISSEKANNE_L) in a journal, any negative period grades (SISSEKANNE_R) in that same journal are **not** counted as negative for that student. The final grade is considered to overwrite/supersede earlier period results. This affects `totalNegativePeriodGrades` and the `_negativeJournalIds` set (used for `exceptionCandidate`).
+
 ## Missing gradeCode
 - If gradeCode missing/null: warn with groupCode, student name, studentId, journalId, studentEntryId; skip counting.
 
 ## Multi-semester heuristic (IMPORTANT)
-- Missing FINAL or PERIOD is only flagged for a student if that journal has at least one corresponding grade (final/period) for ANY student in the GROUP.
+- Missing FINAL or PERIOD is only flagged for a student if:
+  1. That journal has at least one corresponding grade (final/period) for ANY student in the GROUP, AND
+  2. The student has at least one entry (any entry type) in that journal, meaning they are actively enrolled/participating in it.
+
+### Enrollment participation check
+Tahvel's group report includes students for ALL journals in the curriculum, even journals they don't take. Journals a student doesn't participate in have `results: []` (zero entries). These students are **not** flagged as `missingFinal` or `missingPeriod` — the flags only apply to students actively enrolled in the journal.
 
 ## Problematic subject rule (for stipend exception support)
 - A subject is problematic if:
@@ -49,106 +57,161 @@ missingPeriodSubjects, missingFinalSubjects,
 problemSubjects (semicolon list Subject|Teacher|flags),
 exceptionCandidate (true/false)
 
+## Usage
 
-## Next implementation step
+Open Tahvel, then run examples in browser console.
+All snippets below intentionally use `var` (not `const`/`let`) so you can paste and rerun them repeatedly in the same console session.
 
-Next, we implement in code:
-
-subject-level counters + problematicByRule + reasons (as described)
-
-build a problematicJournalSet
-
-compute exceptionCandidate for students (draft rule)
-
-TSV exporters
-
-### Draft rule for exceptionCandidate (reasonable default)
-
-A student is exceptionCandidate=true if:
-
-they have any negative grade(s) (period or final), AND
-
-all their negative grades are in journals marked problematicByRule.
-
-### Update aggregate.js (add subject-level student counters)
-
-when processing each student+subject:
-
-after scanning entries, update these counters:
-
-if studentHasAnyGradeInSubject => studentsWithAnyGrade++
-
-if studentHasFinal => studentsWithFinal++
-
-if studentHasFinal && negativeFinalSeen => studentsWithNegativeFinal++
-
-if journalHasFinal[journalId] && !studentHasFinal => studentsMissingFinal++
-
-We need to detect negativeFinalSeen per student+subject (not “count of negative finals”).
-
-### Patch-style code (drop-in additions)
+### Single group (end-to-end)
 
 ```js
-// ... inside per-student per-journal loop:
-let studentHasFinal = false;
-let studentHasPeriod = false;
-let studentHasAnyGradeInSubject = false;
-let studentHasNegativeFinal = false;
+var groupCode = "TA-25A";
 
-for (const e of j.entries) {
-  // ...existing teacher/date...
-
-  if (!e.gradeCode) { warn(...); continue; }
-
-  studentHasAnyGradeInSubject = true;
-  studentStats.totalGrades += 1;
-  subj.totalGradeCount += 1;
-
-  if (e.entryType === "SISSEKANNE_R") {
-    studentHasPeriod = true;
-    // ...existing period counters...
-  }
-
-  if (e.entryType === "SISSEKANNE_L") {
-    studentHasFinal = true;
-    // ...existing final counters...
-    if (isNegative(e.gradeCode)) studentHasNegativeFinal = true;
-  }
+// 1) Resolve studentGroup + curriculumVersion for this code
+var resolved = await window.reports.stipend.resolveGroupReportParams(groupCode);
+if (!resolved.exactMatchFound) {
+  console.warn("No exact autocomplete match", resolved);
 }
 
-// after loop:
-if (studentHasAnyGradeInSubject) subj.studentsWithAnyGrade += 1;
-if (studentHasFinal) subj.studentsWithFinal += 1;
-if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
+// 2) Build aggregated state for this one group
+var state = await window.reports.stipend.buildStateForGroup(groupCode, {
+  studentGroup: resolved.studentGroup,
+  curriculumVersion: resolved.curriculumVersion,
+  from: "2025-08-01T00:00:00.000Z"
+});
 
-const shouldConsiderFinalMissing = journalHasFinal[journalId] === true;
-if (shouldConsiderFinalMissing && !studentHasFinal) subj.studentsMissingFinal += 1;
+// 3) Export TSV
+var tsv = window.reports.stipend.exportStudentReportTsv(state);
+console.log(state, tsv);
 ```
 
-### After aggregating the group: decide “problematic”
-
-At the end of aggregateGroup, after sets->arrays conversion:
+### Bulk (all groups, one call)
 
 ```js
-for (const k of Object.keys(state.subjectStatMap)) {
-  const subj = state.subjectStatMap[k];
-  const total = subj.totalStudentsInSubject || 0;
-  if (!total) continue;
+var result = await window.reports.stipend.aggregateAndExportAllGroups({
+  resolverOptions: {
+    isValid: true,
+    lang: "ET",
+    size: 200
+  },
+  reportOptions: {
+    from: "2025-08-01T00:00:00.000Z"
+  },
+  concurrency: 4
+});
 
-  const negOrMissingFinal = subj.studentsWithNegativeFinal + subj.studentsMissingFinal;
-  const ratio = negOrMissingFinal / total;
+console.log("summary", result.summary);
+console.log("unresolved", result.unresolved);
+console.log("fetchErrors", result.fetchErrors);
+console.log("combined state", result.state);
+console.log("tsv", result.tsv);
+```
 
-  const reasons = [];
-  if (subj.totalFinalGrades > 0 && ratio >= 0.75) {
-    reasons.push(`NEG_OR_MISSING_FINAL_${Math.round(ratio * 100)}%`);
-  }
+### Advanced debugging / intermediate reruns
 
-  const nonGradedRatio = subj.nonGradedStudents / total;
-  if (nonGradedRatio >= 0.75) {
-    reasons.push(`NOT_GRADED_${Math.round(nonGradedRatio * 100)}%`);
-  }
+```js
+// Step A: only resolve params for all groups
+var resolvedPack = await window.reports.stipend.resolveAllGroupReportParams({
+  isValid: true,
+  lang: "ET",
+  size: 200,
+  concurrency: 6
+});
 
-  subj.problematicByRule = reasons.length > 0;
-  subj.problematicReasons = reasons;
+// Inspect failures before heavy fetching
+console.table(
+  resolvedPack.unresolved.map(x => ({
+    groupCode: x.groupCode,
+    exactMatchFound: x.exactMatchFound,
+    curriculumVersion: x.curriculumVersion
+  }))
+);
+
+// Step B: rerun one problematic group manually
+var one = resolvedPack.resolved.find(x => x.groupCode === "TA-25A");
+var raw = await window.reports.stipend.fetchGroupTeacherReport(one.groupCode, {
+  studentGroup: one.studentGroup,
+  curriculumVersion: one.curriculumVersion,
+  from: "2025-08-01T00:00:00.000Z"
+});
+var normalized = window.reports.stipend.normalizeGroupReport(raw, one.groupCode);
+var singleState = window.reports.stipend.aggregateAll([normalized], {
+  logger: console.warn
+});
+console.log({ raw, normalized, singleState });
+```
+
+### Save state to localStorage, refresh, restore
+
+```js
+// ---- save snapshot ----
+var bulk = await window.reports.stipend.aggregateAndExportAllGroups({
+  reportOptions: { from: "2025-08-01T00:00:00.000Z" }
+});
+
+var snapshot = window.reports.stipend.saveSnapshotToLocalStorage({
+  createdAt: new Date().toISOString(),
+  summary: bulk.summary,
+  resolved: bulk.resolved,
+  unresolved: bulk.unresolved,
+  fetchErrors: bulk.fetchErrors,
+  tsv: bulk.tsv,
+  state: bulk.state
+});
+
+console.log("saved", snapshot.summary);
+
+// ---- after page refresh: restore ----
+var restored = window.reports.stipend.loadSnapshotFromLocalStorage();
+
+if (restored?.state) {
+  // can re-export without re-fetching all reports
+  var tsvAgain = window.reports.stipend.exportStudentReportTsv(restored.state);
+  console.log("restored", restored.summary, tsvAgain);
 }
 ```
+
+### Optional: quick TSV download
+
+```js
+function downloadTsv(filename, tsv) {
+  const blob = new Blob([tsv], { type: "text/tab-separated-values;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+downloadTsv("stipend-eligibility-all-groups.tsv", result.tsv);
+```
+
+### Minimal rerunnable snippets
+
+These are short versions meant for quick repeated pasting in browser console.
+
+#### Single group (minimal)
+
+```js
+var r = await window.reports.stipend.resolveGroupReportParams("TA-25A");
+var s = await window.reports.stipend.buildStateForGroup("TA-25A", { studentGroup: r.studentGroup, curriculumVersion: r.curriculumVersion, from: "2025-08-01T00:00:00.000Z" });
+var t = window.reports.stipend.exportStudentReportTsv(s);
+console.log(s, t);
+```
+
+#### Bulk all groups (minimal)
+
+```js
+var b = await window.reports.stipend.aggregateAndExportAllGroups({ reportOptions: { from: "2025-08-01T00:00:00.000Z" } });
+console.log(b.summary, b.unresolved, b.fetchErrors);
+console.log(b.state, b.tsv);
+```
+
+#### Restore snapshot (minimal)
+
+```js
+var x = window.reports.stipend.loadSnapshotFromLocalStorage();
+var t = x?.state ? window.reports.stipend.exportStudentReportTsv(x.state) : "";
+console.log(x?.summary, t);
+```
+
