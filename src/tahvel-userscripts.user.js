@@ -1,4 +1,4 @@
-import './modules/randomRequest.js';
+import './modules/sessionKeepAlive.js';
 import './modules/usageLogger.js';
 import './modules/teachers.js';
 import './modules/gradeHistory/gradeHistory.js';

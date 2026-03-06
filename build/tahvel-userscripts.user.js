@@ -14,7 +14,7 @@
 // ==/UserScript==
 
 (() => {
-  // src/features/randomRequest.js
+  // src/modules/randomRequest.js
   setInterval(() => {
     fetch("https://tahvel.edu.ee/hois_back/user", {
       method: "GET",
@@ -26,7 +26,7 @@
   // src/version.js
   var version = "1.5.6";
 
-  // src/features/usageLogger.js
+  // src/modules/usageLogger.js
   setTimeout(async () => {
     const response = await fetch(`https://tahvel.edu.ee/hois_back/user`);
     const userData = await response.json();
@@ -129,11 +129,6 @@
     { roomNumber: "B513", seats: "8", computers: "", area: "25", board: "", os: "" }
   ];
 
-  // env-ns:env
-  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
-  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
-  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
-
   // src/auth/msal.js
   var Msal = class {
     #instance;
@@ -152,8 +147,8 @@
     #initMsal() {
       const msalConfig = {
         auth: {
-          clientId: MSAL_CLIENT_ID,
-          authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
+          clientId: void 0,
+          authority: "https://login.microsoftonline.com/" + void 0,
           redirectUri: "https://tahvel.edu.ee/"
         },
         cache: { cacheLocation: "localStorage" }
@@ -206,7 +201,7 @@
       if (this.#accounts.length === 0) return false;
       this.msalInstance.setActiveAccount(this.#accounts[0]);
       try {
-        this.msalInstance.acquireTokenSilent({ scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] });
+        this.msalInstance.acquireTokenSilent({ scopes: [void 0 + "/.default"], account: this.#accounts[0] });
         return true;
       } catch (error) {
         console.error("Token acquisition failed: ", error);
@@ -214,7 +209,7 @@
       }
     }
     async getToken() {
-      const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
+      const silentRequest = { scopes: [void 0 + "/.default"], account: this.#accounts[0] };
       if (!this.checkAuth()) {
         this.login();
         return null;
@@ -230,7 +225,7 @@
     }
   };
 
-  // src/features/gradeHistory/graphComponents.js
+  // src/modules/gradeHistory/graphComponents.js
   var GraphComponents = class {
     #graph;
     #login;
@@ -273,7 +268,7 @@
     }
   };
 
-  // src/features/gradeHistory/waitForElement.js
+  // src/modules/gradeHistory/waitForElement.js
   async function waitForElement(selector) {
     return new Promise((resolve) => {
       const element = document.querySelector(selector);
@@ -290,7 +285,7 @@
     });
   }
 
-  // src/features/gradeHistory/getStudentId.js
+  // src/modules/gradeHistory/getStudentId.js
   function getStudentId() {
     let id = null;
     const url = window.location.href;
@@ -370,13 +365,13 @@
     ]
   };
 
-  // src/features/gradeHistory/gradeHistory.css
+  // src/modules/gradeHistory/gradeHistory.css
   var gradeHistory_default = "#grade-history-container {\n  position: relative;\n  height: 400px;\n  margin: 2px;\n  border: 1px solid hsl(60, 4%, 85%);\n}\n\n#graph-container {\n  width: 100%;\n  height: 85%;\n}\n\n.grade-history-overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: rgba(0, 0, 0, 0.4);\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  backdrop-filter: blur(2px); /* Modern browsers - blurs background */\n  z-index: 1;\n}\n\n.graph-login-container {\n  background: white;\n  padding: 15px;\n  border-radius: 8px;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);\n  width: 300px;\n  height: 200px;\n  text-align: center;\n}\n\n.graph-spinner {\n  position: absolute;\n  left: 50%;\n  top: 50%;\n  z-index: 1;\n  width: 120px;\n  height: 120px;\n  margin: -76px 0 0 -76px;\n  border: 16px solid #f3f3f3;\n  border-radius: 50%;\n  border-top: 16px solid #3498db;\n  -webkit-animation: spin 2s linear infinite;\n  animation: spin 2s linear infinite;\n}\n\n@-webkit-keyframes spin {\n  0% { -webkit-transform: rotate(0deg); }\n  100% { -webkit-transform: rotate(360deg); }\n}\n\n@keyframes spin {\n  0% { transform: rotate(0deg); }\n  100% { transform: rotate(360deg); }\n}";
 
-  // src/features/gradeHistory/gradeHistory.html
+  // src/modules/gradeHistory/gradeHistory.html
   var gradeHistory_default2 = '<fieldset id="grade-history-container">\n  <legend>Ajalugu</legend>\n\n  <!-- Graph container -->\n  <div id="graph-container">\n    <div id="graph-controlls">\n      <a id="graph-metric-btn" class="md-raised md-primary md-button md-ink-ripple">\n        Puudumiste vaade\n      </a>\n\n      <a id="graph-scope-btn" class="md-raised md-primary md-button md-ink-ripple">\n        L\xF5pphinnete vaade\n      </a>\n\n      <a id="graph-mode-btn" class="md-raised md-secondary md-button md-ink-ripple">\n        T\xE4iustatud vaade\n      </a>\n    </div>\n\n    <canvas id="grade-history-graph" style="width: 100%; height: 100%; margin: 2px;"></canvas>\n  </div>\n\n  <!-- Login overlay -->\n  <div id="graph-login-overlay" class="grade-history-overlay" style="display: none;">\n    <div id="graph-login-container" class="graph-login-container">\n      <h1>Logi sisse hinnete ajaloo n\xE4gemiseks</h1>\n      <button id="graph-login-btn" class="md-raised md-primary md-button md-ink-ripple">Logi sisse</button>\n    </div>\n  </div>\n\n  <!-- Loading overlay -->\n  <div id="graph-loading-overlay" class="grade-history-overlay" style="display: none;">\n    <div id="graph-spinner" class="graph-spinner"></div>\n  </div>\n</fieldset>';
 
-  // src/features/gradeHistory/gradeHistory.js
+  // src/modules/gradeHistory/gradeHistory.js
   window.addEventListener("hashchange", gradeHistory);
   GM_addStyle(gradeHistory_default);
   var auth = new Authentication();
@@ -539,7 +534,7 @@
         return studentData[studentId];
       }
       const accessToken = await auth.getToken();
-      const apiResponse = await fetch(SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
+      const apiResponse = await fetch(void 0 + `/api/StudentRecord/Student/${studentId}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
       }).then((res) => res.json());
@@ -790,7 +785,7 @@
     }
   }
 
-  // src/features/teachers.js
+  // src/modules/teachers.js
   if (typeof GM_log === "function") console.log = GM_log;
   (function() {
     "use strict";
@@ -1867,4 +1862,789 @@
     }
     return null;
   }
+
+  // src/modules/reports/stipend-eligibility/normalize.js
+  function normalizeGroupReport(rawGroupData, groupCode) {
+    if (!rawGroupData || !Array.isArray(rawGroupData.students)) return null;
+    const journalNameById = buildJournalNameMap(rawGroupData);
+    const out = { groupCode, students: [] };
+    for (const s of rawGroupData.students) {
+      const ns = {
+        studentId: s.id,
+        fullname: s.fullname,
+        status: s.status,
+        weightedAverageGrade: s.weightedAverageGrade ?? null,
+        lessonAbsencePercentage: s.lessonAbsencePercentage ?? null,
+        journalsById: {}
+      };
+      const cols = Array.isArray(s.resultColumns) ? s.resultColumns : [];
+      for (const col of cols) {
+        const jr = col?.journalResult;
+        if (!jr?.id) continue;
+        const journalId = jr.id;
+        const results = Array.isArray(jr.results) ? jr.results : [];
+        const existsInJournal = jr?.existsInJournal;
+        if (existsInJournal === false && results.length === 0) continue;
+        const fallbackSubject = journalNameById[journalId] ?? `Journal ${journalId}`;
+        if (!ns.journalsById[journalId]) {
+          ns.journalsById[journalId] = { journalId, subject: fallbackSubject, entries: [] };
+        }
+        for (const r of results) {
+          const j = r.journal;
+          const subject = j?.nameEt ?? j?.nameEn ?? j?.nameRu ?? fallbackSubject;
+          if (ns.journalsById[journalId].subject?.startsWith("Journal ") && subject && !subject.startsWith("Journal ")) {
+            ns.journalsById[journalId].subject = subject;
+          }
+          ns.journalsById[journalId].entries.push({
+            journalId,
+            subject: ns.journalsById[journalId].subject,
+            teacher: r.gradeInsertedBy ?? null,
+            entryType: r.entryType,
+            entryDate: r.entryDate,
+            gradeCode: r.grade?.code ?? null,
+            gradeInserted: r.gradeInserted ?? null,
+            studentEntryId: typeof r.studentEntryId === "number" ? r.studentEntryId : null
+          });
+        }
+      }
+      out.students.push(ns);
+    }
+    return out;
+  }
+  function buildJournalNameMap(rawGroupData) {
+    const map = /* @__PURE__ */ Object.create(null);
+    const moduleTypes = Array.isArray(rawGroupData?.moduleTypes) ? rawGroupData.moduleTypes : [];
+    for (const mt of moduleTypes) {
+      const modules = Array.isArray(mt?.modules) ? mt.modules : [];
+      for (const m of modules) {
+        const journals = Array.isArray(m?.journals) ? m.journals : [];
+        for (const j of journals) {
+          if (!j?.id) continue;
+          const name = j?.nameEt ?? j?.nameEn ?? j?.nameRu ?? null;
+          if (name) map[j.id] = name;
+        }
+      }
+    }
+    return map;
+  }
+
+  // src/modules/reports/stipend-eligibility/aggregate.js
+  var NEGATIVE = /* @__PURE__ */ new Set([
+    "KUTSEHINDAMINE_MA",
+    "KUTSEHINDAMINE_X",
+    "KUTSEHINDAMINE_1",
+    "KUTSEHINDAMINE_2"
+  ]);
+  function isNegative(code) {
+    return code ? NEGATIVE.has(code) : false;
+  }
+  function warn(logger, msg, payload) {
+    if (!logger) return;
+    try {
+      logger(msg, payload ?? "");
+    } catch {
+    }
+  }
+  function createEmptyState() {
+    return {
+      studentStatMap: {},
+      // studentId -> StudentStats-ish
+      subjectStatMap: {},
+      // journalId -> SubjectStats-ish
+      groups: {},
+      // groupCode -> StudentStats[]
+      problematicJournalSet: /* @__PURE__ */ new Set()
+      // Set<string journalId>
+    };
+  }
+  function aggregateGroup(normalizedGroup, state, { logger = console.warn } = {}) {
+    const groupCode = normalizedGroup.groupCode;
+    if (!state.groups[groupCode]) state.groups[groupCode] = [];
+    const journalHasFinal = /* @__PURE__ */ Object.create(null);
+    const journalHasPeriod = /* @__PURE__ */ Object.create(null);
+    for (const s of normalizedGroup.students) {
+      for (const j of Object.values(s.journalsById)) {
+        for (const e of j.entries) {
+          if (!e.gradeCode) continue;
+          if (e.entryType === "SISSEKANNE_L") journalHasFinal[j.journalId] = true;
+          if (e.entryType === "SISSEKANNE_R") journalHasPeriod[j.journalId] = true;
+        }
+      }
+    }
+    for (const s of normalizedGroup.students) {
+      const studentStats = {
+        fullname: s.fullname,
+        groupCode,
+        status: s.status,
+        totalGrades: 0,
+        totalFinalGrades: 0,
+        totalPeriodGrades: 0,
+        totalNegativeFinalGrades: 0,
+        totalNegativePeriodGrades: 0,
+        weightedAverageGrade: s.weightedAverageGrade ?? null,
+        lessonAbsencePercentage: s.lessonAbsencePercentage ?? null,
+        problematicSubjects: [],
+        exceptionCandidate: false,
+        _negativeJournalIds: /* @__PURE__ */ new Set()
+        // internal: journals where this student has negative period/final
+      };
+      const journals = Object.values(s.journalsById);
+      for (const j of journals) {
+        const journalId = j.journalId;
+        const key = String(journalId);
+        if (!state.subjectStatMap[key]) {
+          state.subjectStatMap[key] = {
+            journalId,
+            subject: j.subject,
+            totalGradeCount: 0,
+            totalStudentsInSubject: 0,
+            nonGradedStudents: 0,
+            totalPeriodGrades: 0,
+            totalFinalGrades: 0,
+            firstEntryDate: null,
+            lastEntryDate: null,
+            teachers: /* @__PURE__ */ new Set(),
+            studentsWithAnyGrade: 0,
+            studentsWithFinal: 0,
+            studentsWithNegativeFinal: 0,
+            studentsMissingFinal: 0,
+            problematicByRule: false,
+            problematicReasons: []
+          };
+        }
+        const subj = state.subjectStatMap[key];
+        subj.totalStudentsInSubject += 1;
+        let studentHasAnyGradeInSubject = false;
+        let studentHasFinal = false;
+        let studentHasPeriod = false;
+        let studentHasNegativeFinal = false;
+        let journalHasPositiveFinal = false;
+        let journalHasNegativeFinal = false;
+        let journalNegativePeriodCount = 0;
+        for (const e of j.entries) {
+          if (e.teacher) subj.teachers.add(e.teacher);
+          if (e.entryDate) {
+            const d = e.entryDate.slice(0, 10);
+            subj.firstEntryDate = subj.firstEntryDate ? d < subj.firstEntryDate ? d : subj.firstEntryDate : d;
+            subj.lastEntryDate = subj.lastEntryDate ? d > subj.lastEntryDate ? d : subj.lastEntryDate : d;
+          }
+          if (!e.gradeCode) {
+            warn(logger, "Missing gradeCode; skipping entry", {
+              groupCode,
+              student: s.fullname,
+              studentId: s.studentId,
+              journalId,
+              studentEntryId: e.studentEntryId,
+              entryType: e.entryType,
+              entryDate: e.entryDate
+            });
+            continue;
+          }
+          studentHasAnyGradeInSubject = true;
+          studentStats.totalGrades += 1;
+          subj.totalGradeCount += 1;
+          if (e.entryType === "SISSEKANNE_R") {
+            studentHasPeriod = true;
+            studentStats.totalPeriodGrades += 1;
+            subj.totalPeriodGrades += 1;
+            if (isNegative(e.gradeCode)) journalNegativePeriodCount += 1;
+          }
+          if (e.entryType === "SISSEKANNE_L") {
+            studentHasFinal = true;
+            studentStats.totalFinalGrades += 1;
+            subj.totalFinalGrades += 1;
+            if (isNegative(e.gradeCode)) {
+              journalHasNegativeFinal = true;
+              studentStats.totalNegativeFinalGrades += 1;
+              studentHasNegativeFinal = true;
+              studentStats._negativeJournalIds.add(String(journalId));
+            } else {
+              journalHasPositiveFinal = true;
+            }
+          }
+        }
+        const shouldSuppressNegativePeriods = journalHasPositiveFinal && !journalHasNegativeFinal;
+        if (journalNegativePeriodCount > 0 && !shouldSuppressNegativePeriods) {
+          studentStats.totalNegativePeriodGrades += journalNegativePeriodCount;
+          studentStats._negativeJournalIds.add(String(journalId));
+        }
+        if (!studentHasAnyGradeInSubject) subj.nonGradedStudents += 1;
+        if (studentHasAnyGradeInSubject) subj.studentsWithAnyGrade += 1;
+        if (studentHasFinal) subj.studentsWithFinal += 1;
+        if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
+        const shouldConsiderFinalMissing = journalHasFinal[journalId] === true;
+        if (shouldConsiderFinalMissing && studentHasAnyGradeInSubject && !studentHasFinal) subj.studentsMissingFinal += 1;
+        const shouldFlagPeriod = journalHasPeriod[journalId] === true && studentHasAnyGradeInSubject && !studentHasPeriod;
+        const shouldFlagFinal = journalHasFinal[journalId] === true && studentHasAnyGradeInSubject && !studentHasFinal;
+        if (shouldFlagPeriod || shouldFlagFinal) {
+          const teacherGuess = [...j.entries].reverse().find((x) => x.teacher)?.teacher ?? "";
+          const flags = [
+            shouldFlagPeriod ? "missingPeriod" : null,
+            shouldFlagFinal ? "missingFinal" : null
+          ].filter(Boolean);
+          studentStats.problematicSubjects.push({
+            subject: j.subject,
+            teacher: teacherGuess,
+            flags
+          });
+        }
+      }
+      state.studentStatMap[s.studentId] = studentStats;
+      state.groups[groupCode].push(studentStats);
+    }
+    return state;
+  }
+  function finalizeState(state) {
+    const problematic = /* @__PURE__ */ new Set();
+    for (const k of Object.keys(state.subjectStatMap)) {
+      const subj = state.subjectStatMap[k];
+      if (subj.teachers instanceof Set) subj.teachers = [...subj.teachers].sort();
+      const total = subj.totalStudentsInSubject || 0;
+      if (!total) continue;
+      const reasons = [];
+      const negOrMissingFinal = (subj.studentsWithNegativeFinal || 0) + (subj.studentsMissingFinal || 0);
+      const ratio = negOrMissingFinal / total;
+      if ((subj.totalFinalGrades || 0) > 0 && ratio >= 0.75) {
+        reasons.push(`NEG_OR_MISSING_FINAL_${Math.round(ratio * 100)}%`);
+      }
+      const nonGradedRatio = (subj.nonGradedStudents || 0) / total;
+      if (nonGradedRatio >= 0.75) {
+        reasons.push(`NOT_GRADED_${Math.round(nonGradedRatio * 100)}%`);
+      }
+      subj.problematicReasons = reasons;
+      subj.problematicByRule = reasons.length > 0;
+      if (subj.problematicByRule) problematic.add(String(subj.journalId));
+    }
+    state.problematicJournalSet = problematic;
+    for (const studentId of Object.keys(state.studentStatMap)) {
+      const st = state.studentStatMap[studentId];
+      const negSet = st?._negativeJournalIds;
+      const negativeJournalIds = negSet instanceof Set ? [...negSet] : [];
+      const hasAnyNegative = negativeJournalIds.length > 0;
+      const allNegativesInProblematic = negativeJournalIds.every((jid) => problematic.has(String(jid)));
+      st.exceptionCandidate = hasAnyNegative && allNegativesInProblematic;
+      if (st && "_negativeJournalIds" in st) delete st._negativeJournalIds;
+    }
+    return state;
+  }
+  function aggregateAll(normalizedGroups, opts) {
+    const state = createEmptyState();
+    for (const g of normalizedGroups) aggregateGroup(g, state, opts);
+    return finalizeState(state);
+  }
+
+  // src/modules/reports/stipend-eligibility/tsv.js
+  function tsvCell(value) {
+    if (value === null || value === void 0) return "";
+    return String(value).replace(/[\t\r\n]+/g, " ").trim();
+  }
+  function yesNo(value) {
+    return value ? "true" : "false";
+  }
+  function uniqSorted(arr) {
+    return [...new Set(arr)].sort((a, b) => String(a).localeCompare(String(b), "et"));
+  }
+  function studentToTsvRow(studentStats) {
+    const problematic = Array.isArray(studentStats.problematicSubjects) ? studentStats.problematicSubjects : [];
+    const missingPeriodSubjects = uniqSorted(
+      problematic.filter((p) => Array.isArray(p.flags) && p.flags.includes("missingPeriod")).map((p) => p.subject)
+    );
+    const missingFinalSubjects = uniqSorted(
+      problematic.filter((p) => Array.isArray(p.flags) && p.flags.includes("missingFinal")).map((p) => p.subject)
+    );
+    const problemSubjects = problematic.map((p) => {
+      const flags = Array.isArray(p.flags) ? p.flags.join(",") : "";
+      return `${p.subject}|${p.teacher ?? ""}|${flags}`;
+    }).join(";");
+    const cols = [
+      studentStats.groupCode,
+      studentStats.fullname,
+      studentStats.status,
+      studentStats.weightedAverageGrade,
+      studentStats.lessonAbsencePercentage,
+      studentStats.totalGrades,
+      studentStats.totalPeriodGrades,
+      studentStats.totalFinalGrades,
+      studentStats.totalNegativePeriodGrades,
+      studentStats.totalNegativeFinalGrades,
+      missingPeriodSubjects.join(";"),
+      missingFinalSubjects.join(";"),
+      problemSubjects,
+      yesNo(studentStats.exceptionCandidate)
+    ];
+    return cols.map(tsvCell).join("	");
+  }
+  function exportStudentReportTsv(state, { groupCode = null, includeHeader = true, sortByName = true } = {}) {
+    const header = [
+      "groupCode",
+      "fullname",
+      "status",
+      "weightedAverageGrade",
+      "lessonAbsencePercentage",
+      "totalGrades",
+      "totalPeriodGrades",
+      "totalFinalGrades",
+      "negativePeriodGrades",
+      "negativeFinalGrades",
+      "missingPeriodSubjects",
+      "missingFinalSubjects",
+      "problemSubjects",
+      "exceptionCandidate"
+    ].join("	");
+    const groups = state?.groups ?? {};
+    const groupCodes = groupCode ? [groupCode] : Object.keys(groups).sort((a, b) => a.localeCompare(b, "et"));
+    const rows = [];
+    for (const gc of groupCodes) {
+      const students = Array.isArray(groups[gc]) ? [...groups[gc]] : [];
+      if (sortByName) students.sort((a, b) => String(a.fullname).localeCompare(String(b.fullname), "et"));
+      for (const st of students) rows.push(studentToTsvRow(st));
+    }
+    return (includeHeader ? [header, ...rows] : rows).join("\n");
+  }
+
+  // src/modules/reports/stipend-eligibility/windowApi.js
+  function getRootWindow() {
+    if (typeof unsafeWindow !== "undefined" && unsafeWindow) return unsafeWindow;
+    if (typeof window !== "undefined" && window) return window;
+    return null;
+  }
+  function getCookieValue(root, name) {
+    try {
+      const cookie = root?.document?.cookie ?? "";
+      const parts = cookie.split(";");
+      for (const p of parts) {
+        const [k, ...rest] = p.trim().split("=");
+        if (k === name) return rest.join("=");
+      }
+    } catch {
+    }
+    return null;
+  }
+  function createRequestHeaders(root) {
+    const xsrf = getCookieValue(root, "XSRF-TOKEN");
+    const headers = {
+      Accept: "application/json, text/plain, */*",
+      "X-Requested-With": "XMLHttpRequest"
+    };
+    if (xsrf) headers["X-XSRF-TOKEN"] = decodeURIComponent(xsrf);
+    return headers;
+  }
+  async function fetchJsonWithAuth(root, url) {
+    const res = await root.fetch(url, {
+      credentials: "include",
+      headers: createRequestHeaders(root)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Request failed (${res.status}) ${url}: ${text.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+  function normalizeCode(value) {
+    return String(value ?? "").trim().toUpperCase();
+  }
+  function findExactAutocompleteMatch(candidates, groupCode) {
+    const wanted = normalizeCode(groupCode);
+    if (!wanted || !Array.isArray(candidates)) return null;
+    return candidates.find((c) => normalizeCode(c?.nameEt) === wanted) ?? candidates.find((c) => normalizeCode(c?.nameEn) === wanted) ?? candidates.find((c) => normalizeCode(c?.nameRu) === wanted) ?? null;
+  }
+  async function fetchAllStudentGroups({
+    apiBase,
+    isValid = true,
+    lang = "ET",
+    size = 200,
+    sort = "CODE",
+    logger = console.warn
+  } = {}) {
+    const root = getRootWindow();
+    if (!root) throw new Error("No window context available");
+    const base = apiBase ?? `${root.location.origin}/hois_back`;
+    const all = [];
+    let page = 0;
+    let totalElements = null;
+    let keepGoing = true;
+    while (keepGoing) {
+      const url = new URL(`${base}/studentgroups`);
+      url.searchParams.set("isValid", String(Boolean(isValid)));
+      url.searchParams.set("lang", String(lang));
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("size", String(size));
+      url.searchParams.set("sort", String(sort));
+      const payload = await fetchJsonWithAuth(root, url.toString());
+      const content = Array.isArray(payload?.content) ? payload.content : [];
+      all.push(...content);
+      if (typeof payload?.totalElements === "number") totalElements = payload.totalElements;
+      const number = typeof payload?.number === "number" ? payload.number : page;
+      const last = payload?.last === true;
+      const totalPages = typeof payload?.totalPages === "number" ? payload.totalPages : null;
+      if (last) {
+        keepGoing = false;
+      } else if (totalPages != null) {
+        keepGoing = number + 1 < totalPages;
+        page = number + 1;
+      } else if (content.length >= size) {
+        page += 1;
+        keepGoing = true;
+      } else {
+        keepGoing = false;
+      }
+    }
+    if (totalElements != null && all.length < totalElements) {
+      try {
+        logger("fetchAllStudentGroups fetched fewer groups than totalElements", {
+          fetched: all.length,
+          totalElements,
+          size
+        });
+      } catch {
+      }
+    }
+    return all;
+  }
+  async function fetchStudentGroupAutocomplete(groupCode, {
+    apiBase,
+    lang = "ET",
+    basic = true,
+    secondary = true,
+    valid = true,
+    vocational = true
+  } = {}) {
+    const root = getRootWindow();
+    if (!root) throw new Error("No window context available");
+    const base = apiBase ?? `${root.location.origin}/hois_back`;
+    const url = new URL(`${base}/autocomplete/studentgroups`);
+    url.searchParams.set("basic", String(Boolean(basic)));
+    url.searchParams.set("lang", String(lang));
+    url.searchParams.set("name", String(groupCode));
+    url.searchParams.set("secondary", String(Boolean(secondary)));
+    url.searchParams.set("valid", String(Boolean(valid)));
+    url.searchParams.set("vocational", String(Boolean(vocational)));
+    const payload = await fetchJsonWithAuth(root, url.toString());
+    return Array.isArray(payload) ? payload : [];
+  }
+  async function resolveGroupReportParams(groupCode, opts = {}) {
+    const candidates = await fetchStudentGroupAutocomplete(groupCode, opts);
+    const exact = findExactAutocompleteMatch(candidates, groupCode);
+    return {
+      groupCode,
+      exactMatchFound: Boolean(exact),
+      studentGroup: exact?.id ?? null,
+      curriculumVersion: exact?.curriculumVersion ?? null,
+      autocompleteMatch: exact ?? null,
+      autocompleteCandidates: candidates
+    };
+  }
+  async function resolveAllGroupReportParams({
+    apiBase,
+    logger = console.warn,
+    concurrency = 6,
+    ...opts
+  } = {}) {
+    const groups = await fetchAllStudentGroups({ apiBase, logger, ...opts });
+    const queue = groups.map((g) => ({
+      id: g?.id ?? null,
+      code: g?.code ?? "",
+      teacher: g?.teacher ?? null,
+      curriculumVersionFromGroups: g?.curriculumVersion ?? null,
+      source: g
+    }));
+    const results = new Array(queue.length);
+    const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, 20));
+    let index = 0;
+    async function worker() {
+      while (true) {
+        const cur = index;
+        index += 1;
+        if (cur >= queue.length) return;
+        const item = queue[cur];
+        try {
+          const resolved = await resolveGroupReportParams(item.code, { apiBase, ...opts });
+          const finalStudentGroup = resolved.studentGroup ?? item.id;
+          results[cur] = {
+            groupCode: item.code,
+            studentGroup: finalStudentGroup,
+            curriculumVersion: resolved.curriculumVersion,
+            exactMatchFound: resolved.exactMatchFound,
+            groupIdFromStudentGroups: item.id,
+            curriculumVersionFromStudentGroups: item.curriculumVersionFromGroups,
+            teacher: item.teacher,
+            autocompleteMatch: resolved.autocompleteMatch,
+            autocompleteCandidates: resolved.autocompleteCandidates,
+            source: item.source
+          };
+        } catch (error) {
+          try {
+            logger("Failed to resolve group report params", {
+              groupCode: item.code,
+              error: error?.message ?? String(error)
+            });
+          } catch {
+          }
+          results[cur] = {
+            groupCode: item.code,
+            studentGroup: item.id,
+            curriculumVersion: item.curriculumVersionFromGroups,
+            exactMatchFound: false,
+            groupIdFromStudentGroups: item.id,
+            curriculumVersionFromStudentGroups: item.curriculumVersionFromGroups,
+            teacher: item.teacher,
+            autocompleteMatch: null,
+            autocompleteCandidates: [],
+            source: item.source,
+            error: error?.message ?? String(error)
+          };
+        }
+      }
+    }
+    const workers = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    const unresolved = results.filter((r) => !r?.exactMatchFound || r?.curriculumVersion == null);
+    if (unresolved.length > 0) {
+      try {
+        logger("resolveAllGroupReportParams has unresolved groups", {
+          unresolvedCount: unresolved.length,
+          total: results.length,
+          sample: unresolved.slice(0, 10).map((r) => ({
+            groupCode: r.groupCode,
+            exactMatchFound: r.exactMatchFound,
+            curriculumVersion: r.curriculumVersion
+          }))
+        });
+      } catch {
+      }
+    }
+    return {
+      groups,
+      resolved: results,
+      unresolved,
+      summary: {
+        totalGroups: results.length,
+        exactMatches: results.filter((r) => r?.exactMatchFound).length,
+        withCurriculumVersion: results.filter((r) => r?.curriculumVersion != null).length,
+        unresolved: unresolved.length
+      }
+    };
+  }
+  async function aggregateAndExportAllGroups({
+    apiBase,
+    logger = console.warn,
+    resolverOptions,
+    reportOptions,
+    concurrency = 4,
+    includeHeader = true,
+    sortByName = true
+  } = {}) {
+    const resolvedPack = await resolveAllGroupReportParams({
+      apiBase,
+      logger,
+      ...resolverOptions ?? {}
+    });
+    const resolved = Array.isArray(resolvedPack?.resolved) ? resolvedPack.resolved : [];
+    const ready = resolved.filter((r) => r?.studentGroup != null && r?.curriculumVersion != null);
+    const skipped = resolved.filter((r) => r?.studentGroup == null || r?.curriculumVersion == null);
+    const normalizedGroups = [];
+    const fetchErrors = [];
+    const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, 20));
+    let index = 0;
+    async function worker() {
+      while (true) {
+        const cur = index;
+        index += 1;
+        if (cur >= ready.length) return;
+        const item = ready[cur];
+        try {
+          const raw = await fetchGroupTeacherReport(item.groupCode, {
+            apiBase,
+            studentGroup: item.studentGroup,
+            curriculumVersion: item.curriculumVersion,
+            ...reportOptions ?? {}
+          });
+          const normalized = normalizeGroupReport(raw, item.groupCode);
+          if (!normalized) {
+            throw new Error("normalizeGroupReport returned null");
+          }
+          normalizedGroups.push(normalized);
+        } catch (error) {
+          const failure = {
+            groupCode: item.groupCode,
+            studentGroup: item.studentGroup,
+            curriculumVersion: item.curriculumVersion,
+            error: error?.message ?? String(error)
+          };
+          fetchErrors.push(failure);
+          try {
+            logger("Failed to fetch/normalize group report", failure);
+          } catch {
+          }
+        }
+      }
+    }
+    const workers = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    const state = aggregateAll(normalizedGroups, { logger });
+    const tsv = exportStudentReportTsv(state, { includeHeader, sortByName });
+    const totalStudents = Object.values(state?.groups ?? {}).reduce((acc, arr) => {
+      return acc + (Array.isArray(arr) ? arr.length : 0);
+    }, 0);
+    return {
+      state,
+      tsv,
+      resolved,
+      unresolved: resolvedPack?.unresolved ?? [],
+      skipped,
+      fetchErrors,
+      summary: {
+        totalGroupsDiscovered: resolved.length,
+        groupsReadyForFetch: ready.length,
+        groupsFetched: normalizedGroups.length,
+        groupsSkipped: skipped.length,
+        groupsFailed: fetchErrors.length,
+        totalStudents
+      }
+    };
+  }
+  function toSerializableSnapshotData(data) {
+    if (!data || typeof data !== "object") return data;
+    const state = data?.state && typeof data.state === "object" ? {
+      ...data.state,
+      problematicJournalSet: [...data.state.problematicJournalSet ?? []]
+    } : null;
+    if (!state) return { ...data };
+    return { ...data, state };
+  }
+  function fromSerializableSnapshotData(data) {
+    if (!data || typeof data !== "object") return data;
+    if (!data?.state || typeof data.state !== "object") return { ...data };
+    const state = {
+      ...data.state,
+      problematicJournalSet: new Set(data.state.problematicJournalSet ?? [])
+    };
+    return { ...data, state };
+  }
+  function saveSnapshotToLocalStorage(data, { key = "stipendEligibilitySnapshot" } = {}) {
+    const root = getRootWindow();
+    if (!root) throw new Error("No window context available");
+    if (!root.localStorage) throw new Error("localStorage is not available");
+    const serializable = toSerializableSnapshotData(data);
+    const payload = {
+      ...serializable,
+      savedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    root.localStorage.setItem(String(key), JSON.stringify(payload));
+    return payload;
+  }
+  function loadSnapshotFromLocalStorage({ key = "stipendEligibilitySnapshot" } = {}) {
+    const root = getRootWindow();
+    if (!root) throw new Error("No window context available");
+    if (!root.localStorage) throw new Error("localStorage is not available");
+    const raw = root.localStorage.getItem(String(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return fromSerializableSnapshotData(parsed);
+  }
+  function buildStudentGroupTeacherReportUrl(base, {
+    studentGroup,
+    curriculumVersion,
+    from,
+    canceledStudents = false,
+    graduatedStudents = false,
+    lang = "ET",
+    studyYear = "",
+    weightedAverageGrade = true,
+    entryType,
+    entryTypes
+  } = {}) {
+    if (studentGroup == null) throw new Error("studentGroup is required");
+    if (curriculumVersion == null) throw new Error("curriculumVersion is required");
+    const defaultEntryType = {
+      SISSEKANNE_H: true,
+      SISSEKANNE_R: true,
+      SISSEKANNE_O: false,
+      SISSEKANNE_L: true,
+      SISSEKANNE_P: true,
+      SISSEKANNE_T: true,
+      SISSEKANNE_E: true,
+      SISSEKANNE_I: true
+    };
+    const finalEntryType = entryType ?? defaultEntryType;
+    const finalEntryTypes = entryTypes ?? Object.keys(finalEntryType).filter((k) => Boolean(finalEntryType[k]));
+    const url = new URL(`${base}/reports/studentgroupteacher`);
+    const sp = url.searchParams;
+    sp.set("canceledStudents", String(Boolean(canceledStudents)));
+    sp.set("curriculumVersion", String(curriculumVersion));
+    sp.set("entryType", JSON.stringify(finalEntryType));
+    for (const t of finalEntryTypes) sp.append("entryTypes", String(t));
+    if (from) sp.set("from", String(from));
+    sp.set("graduatedStudents", String(Boolean(graduatedStudents)));
+    sp.set("lang", String(lang));
+    sp.set("studentGroup", String(studentGroup));
+    sp.set("studyYear", String(studyYear ?? ""));
+    sp.set("weightedAverageGrade", String(Boolean(weightedAverageGrade)));
+    return url.toString();
+  }
+  async function fetchGroupTeacherReport(groupCode, {
+    apiBase,
+    // New report endpoint params (copied from browser request)
+    studentGroup,
+    curriculumVersion,
+    from,
+    canceledStudents,
+    graduatedStudents,
+    lang,
+    studyYear,
+    weightedAverageGrade,
+    entryType,
+    entryTypes,
+    // Force old endpoint if needed
+    useLegacyTeacherEndpoint = false
+  } = {}) {
+    const root = getRootWindow();
+    if (!root) throw new Error("No window context available");
+    const base = apiBase ?? `${root.location.origin}/hois_back`;
+    const shouldUseReportEndpoint = !useLegacyTeacherEndpoint && (studentGroup != null || curriculumVersion != null || from != null || entryType != null || entryTypes != null);
+    const url = shouldUseReportEndpoint ? buildStudentGroupTeacherReportUrl(base, {
+      studentGroup,
+      curriculumVersion,
+      from,
+      canceledStudents,
+      graduatedStudents,
+      lang,
+      studyYear,
+      weightedAverageGrade,
+      entryType,
+      entryTypes
+    }) : `${base}/teacher/studentGroupTeacherReport?studentGroupCode=${encodeURIComponent(groupCode)}`;
+    return fetchJsonWithAuth(root, url);
+  }
+  async function buildStateForGroup(groupCode, { logger = console.warn, apiBase, ...fetchOpts } = {}) {
+    const raw = await fetchGroupTeacherReport(groupCode, { apiBase, ...fetchOpts });
+    const normalized = normalizeGroupReport(raw, groupCode);
+    if (!normalized) throw new Error("normalizeGroupReport returned null");
+    return aggregateAll([normalized], { logger });
+  }
+  function attachToWindow() {
+    const root = getRootWindow();
+    if (!root) return;
+    if (!root.reports) root.reports = {};
+    if (!root.reports.stipend) root.reports.stipend = {};
+    Object.assign(root.reports.stipend, {
+      normalizeGroupReport,
+      aggregateAll,
+      exportStudentReportTsv,
+      studentToTsvRow,
+      fetchAllStudentGroups,
+      fetchStudentGroupAutocomplete,
+      resolveGroupReportParams,
+      resolveAllGroupReportParams,
+      aggregateAndExportAllGroups,
+      saveSnapshotToLocalStorage,
+      loadSnapshotFromLocalStorage,
+      fetchGroupTeacherReport,
+      buildStudentGroupTeacherReportUrl,
+      buildStateForGroup
+    });
+  }
+  attachToWindow();
 })();
