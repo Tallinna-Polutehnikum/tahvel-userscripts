@@ -51,6 +51,11 @@ Use aggregation option `missingGradeCutoffDate` (ISO date like `2026-09-01`) to 
 ### Enrollment participation check
 Tahvel's group report includes students for ALL journals in the curriculum, even journals they don't take. Journals a student doesn't participate in have `results: []` (zero entries). These students are **not** flagged as `missingFinal` or `missingPeriod` — the flags only apply to students actively enrolled in the journal.
 
+### Cross-group duplicate journal guard
+When aggregating multiple groups, a journal can appear in a group where no student has any entries for it (`results: []` for everyone). Such a group is treated as a non-participating "ghost" for that journal:
+- it does not update global journal counters (`totalStudentsInSubject`, `nonGradedStudents`, etc.),
+- it does not add its group code into that journal's stats.
+
 ## Problematic subject rule (for stipend exception support)
 - A subject is problematic if:
   - journal has finals in the group AND
@@ -59,7 +64,7 @@ Tahvel's group report includes students for ALL journals in the curriculum, even
 
 ## TSV output (student report)
 Columns (tab-separated):
-groupCode, fullname, status, weightedAverageGrade, lessonAbsencePercentage,
+id, groupCode, fullname, status, weightedAverageGrade, lessonAbsencePercentage,
 totalGrades, totalPeriodGrades, totalFinalGrades,
 negativePeriodGrades, negativeFinalGrades,
 missingPeriodGradeCount, missingFinalGradeCount,
@@ -75,7 +80,7 @@ All snippets below intentionally use `var` (not `const`/`let`) so you can paste 
 ### Single group (end-to-end)
 
 ```js
-var groupCode = "TA-25A";
+var groupCode = "IT-24A";
 
 // 1) Resolve studentGroup + curriculumVersion for this code
 var resolved = await window.reports.stipend.resolveGroupReportParams(groupCode);
@@ -87,9 +92,9 @@ if (!resolved.exactMatchFound) {
 var state = await window.reports.stipend.buildStateForGroup(groupCode, {
   studentGroup: resolved.studentGroup,
   curriculumVersion: resolved.curriculumVersion,
-  from: "2025-08-01T00:00:00.000Z",
+  from: "2020-08-01T00:00:00.000Z",
   aggregationOptions: {
-    missingGradeCutoffDate: "2026-09-01"
+    missingGradeCutoffDate: "2026-01-25"
   }
 });
 
@@ -108,10 +113,10 @@ var result = await window.reports.stipend.aggregateAndExportAllGroups({
     size: 200
   },
   reportOptions: {
-    from: "2025-08-01T00:00:00.000Z"
+    from: "2020-08-01T00:00:00.000Z"
   },
   aggregationOptions: {
-    missingGradeCutoffDate: "2026-09-01"
+    missingGradeCutoffDate: "2026-01-25"
   },
   concurrency: 4
 });
@@ -148,7 +153,7 @@ var one = resolvedPack.resolved.find(x => x.groupCode === "TA-25A");
 var raw = await window.reports.stipend.fetchGroupTeacherReport(one.groupCode, {
   studentGroup: one.studentGroup,
   curriculumVersion: one.curriculumVersion,
-  from: "2025-08-01T00:00:00.000Z"
+  from: "2020-08-01T00:00:00.000Z"
 });
 var normalized = window.reports.stipend.normalizeGroupReport(raw, one.groupCode);
 var singleState = window.reports.stipend.aggregateAll([normalized], {
@@ -162,7 +167,7 @@ console.log({ raw, normalized, singleState });
 ```js
 // ---- save snapshot ----
 var bulk = await window.reports.stipend.aggregateAndExportAllGroups({
-  reportOptions: { from: "2025-08-01T00:00:00.000Z" }
+  reportOptions: { from: "2020-08-01T00:00:00.000Z" }
 });
 
 var snapshot = window.reports.stipend.saveSnapshotToLocalStorage({

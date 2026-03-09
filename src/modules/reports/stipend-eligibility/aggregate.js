@@ -98,9 +98,14 @@ export function aggregateGroup(
   const journalHasPeriod = Object.create(null); // journalId -> boolean
   const journalHasFinalAfterCutoff = Object.create(null);  // journalId -> boolean
   const journalHasPeriodAfterCutoff = Object.create(null); // journalId -> boolean
+  const journalHasParticipants = Object.create(null); // journalId -> boolean (any student has >=1 entry)
 
   for (const s of normalizedGroup.students) {
     for (const j of Object.values(s.journalsById)) {
+      if (Array.isArray(j.entries) && j.entries.length > 0) {
+        journalHasParticipants[j.journalId] = true;
+      }
+
       for (const e of j.entries) {
         if (!e.gradeCode) continue;
         if (e.entryType === "SISSEKANNE_L") {
@@ -147,6 +152,11 @@ export function aggregateGroup(
     for (const j of journals) {
       const journalId = j.journalId;
       const key = String(journalId);
+      const shouldIncludeJournalStats = journalHasParticipants[journalId] === true;
+
+      // Guard against ghost journal rows from unrelated group reports:
+      // if this group has zero participants in this journal, do not mutate global journal stats.
+      if (!shouldIncludeJournalStats) continue;
 
       if (!state.subjectStatMap[key]) {
         state.subjectStatMap[key] = {
@@ -170,9 +180,9 @@ export function aggregateGroup(
         };
       }
 
-      const subj = state.subjectStatMap[key];
-      subj.groupCodes.add(groupCode);
-      subj.totalStudentsInSubject += 1;
+      const journalStats = state.subjectStatMap[key];
+      journalStats.groupCodes.add(groupCode);
+      journalStats.totalStudentsInSubject += 1;
 
       // per-student flags within this subject
       let studentHasAnyGradeInSubject = false;
@@ -183,15 +193,17 @@ export function aggregateGroup(
       let journalHasNegativeFinal = false;
       let journalNegativePeriodCount = 0;
 
+      console.log("Processing entries for student", s.fullname, "in subject", j.subject, "with journalId", journalId);
+      console.log("Entries:", j.entries);
       for (const e of j.entries) {
         // track teachers even if gradeCode missing, because it can still be useful metadata
-        if (e.teacher) subj.teachers.add(e.teacher);
+        if (e.teacher) journalStats.teachers.add(e.teacher);
 
         // date window
         if (e.entryDate) {
           const d = e.entryDate.slice(0, 10);
-          subj.firstEntryDate = subj.firstEntryDate ? (d < subj.firstEntryDate ? d : subj.firstEntryDate) : d;
-          subj.lastEntryDate = subj.lastEntryDate ? (d > subj.lastEntryDate ? d : subj.lastEntryDate) : d;
+          journalStats.firstEntryDate = journalStats.firstEntryDate ? (d < journalStats.firstEntryDate ? d : journalStats.firstEntryDate) : d;
+          journalStats.lastEntryDate = journalStats.lastEntryDate ? (d > journalStats.lastEntryDate ? d : journalStats.lastEntryDate) : d;
         }
 
         // If grade code missing: log and skip counts
@@ -211,19 +223,19 @@ export function aggregateGroup(
 
         studentHasAnyGradeInSubject = true;
         studentStats.totalGrades += 1;
-        subj.totalGradeCount += 1;
+        journalStats.totalGradeCount += 1;
 
         if (e.entryType === "SISSEKANNE_R") {
           studentHasPeriod = true;
           studentStats.totalPeriodGrades += 1;
-          subj.totalPeriodGrades += 1;
+          journalStats.totalPeriodGrades += 1;
           if (isNegative(e.gradeCode)) journalNegativePeriodCount += 1;
         }
 
         if (e.entryType === "SISSEKANNE_L") {
           studentHasFinal = true;
           studentStats.totalFinalGrades += 1;
-          subj.totalFinalGrades += 1;
+          journalStats.totalFinalGrades += 1;
           if (isNegative(e.gradeCode)) {
             journalHasNegativeFinal = true;
             studentStats.totalNegativeFinalGrades += 1;
@@ -242,12 +254,12 @@ export function aggregateGroup(
         studentStats._negativeJournalIds.add(String(journalId));
       }
 
-      if (!studentHasAnyGradeInSubject) subj.nonGradedStudents += 1;
+      if (!studentHasAnyGradeInSubject) journalStats.nonGradedStudents += 1;
 
       // subject-level student counters (per student per journal)
-      if (studentHasAnyGradeInSubject) subj.studentsWithAnyGrade += 1;
-      if (studentHasFinal) subj.studentsWithFinal += 1;
-      if (studentHasNegativeFinal) subj.studentsWithNegativeFinal += 1;
+      if (studentHasAnyGradeInSubject) journalStats.studentsWithAnyGrade += 1;
+      if (studentHasFinal) journalStats.studentsWithFinal += 1;
+      if (studentHasNegativeFinal) journalStats.studentsWithNegativeFinal += 1;
 
       const hasRegularAfterCutoff = hasRegularActivityAfterCutoff(j.entries, cutoffDate, regularEntryTypeSet);
       const suppressMissingFinalByCutoff =
@@ -270,7 +282,7 @@ export function aggregateGroup(
 
       if (shouldFlagPeriod) studentStats.totalMissingPeriodGrades += 1;
       if (shouldFlagFinal) {
-        subj.studentsMissingFinal += 1;
+        journalStats.studentsMissingFinal += 1;
         studentStats.totalMissingFinalGrades += 1;
       }
 

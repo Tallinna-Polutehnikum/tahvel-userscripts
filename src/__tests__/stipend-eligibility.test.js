@@ -1,8 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { normalizeGroupReport } from "../modules/reports/stipend-eligibility/normalize.js";
 import { aggregateAll } from "../modules/reports/stipend-eligibility/aggregate.js";
 import { exportStudentReportTsv } from "../modules/reports/stipend-eligibility/tsv.js";
+
+function loadFixture(name) {
+  return JSON.parse(readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), "utf8"));
+}
 
 test("missingFinal is only flagged when journal has any finals in the group", () => {
   const raw = {
@@ -170,6 +175,71 @@ test("journals with existsInJournal=false and empty results are excluded from su
   assert.equal(subj.nonGradedStudents, 0);
   assert.equal(subj.totalFinalGrades, 1);
   assert.equal(state.studentStatMap[2].problematicSubjects.length, 0);
+});
+
+test("fixture regression: empty duplicate journal rows from another group do not change journal stats", () => {
+  const raw = loadFixture("exampleGroupTeacherReport.json");
+  const first = normalizeGroupReport(raw, "FX-REAL");
+
+  let journalId = null;
+  outer:
+  for (const student of raw.students ?? []) {
+    for (const col of student.resultColumns ?? []) {
+      const jr = col?.journalResult;
+      const results = Array.isArray(jr?.results) ? jr.results : [];
+      if (jr?.id && results.length > 0) {
+        journalId = jr.id;
+        break outer;
+      }
+    }
+  }
+
+  assert.ok(journalId != null, "fixture must contain at least one journal with entries");
+
+  const ghostRaw = {
+    students: [
+      {
+        id: 900001,
+        fullname: "Ghost 1",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{ journalResult: { id: journalId, results: [] } }]
+      },
+      {
+        id: 900002,
+        fullname: "Ghost 2",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{ journalResult: { id: journalId, results: [] } }]
+      },
+      {
+        id: 900003,
+        fullname: "Ghost 3",
+        status: "OPPURSTAATUS_O",
+        resultColumns: [{ journalResult: { id: journalId, results: [] } }]
+      }
+    ]
+  };
+
+  const second = normalizeGroupReport(ghostRaw, "FX-GHOST");
+
+  const baselineState = aggregateAll([first], { logger: null });
+  const withGhostState = aggregateAll([first, second], { logger: null });
+
+  const key = String(journalId);
+  const baseline = baselineState.subjectStatMap[key];
+  const withGhost = withGhostState.subjectStatMap[key];
+
+  assert.ok(baseline, "baseline journal stats must exist");
+  assert.ok(withGhost, "journal stats must still exist after ghost group");
+
+  assert.equal(withGhost.totalStudentsInSubject, baseline.totalStudentsInSubject);
+  assert.equal(withGhost.nonGradedStudents, baseline.nonGradedStudents);
+  assert.equal(withGhost.totalGradeCount, baseline.totalGradeCount);
+  assert.equal(withGhost.totalPeriodGrades, baseline.totalPeriodGrades);
+  assert.equal(withGhost.totalFinalGrades, baseline.totalFinalGrades);
+  assert.equal(withGhost.studentsWithAnyGrade, baseline.studentsWithAnyGrade);
+  assert.equal(withGhost.studentsWithFinal, baseline.studentsWithFinal);
+  assert.equal(withGhost.studentsMissingFinal, baseline.studentsMissingFinal);
+  assert.deepEqual(withGhost.groupCodes, baseline.groupCodes);
 });
 
 test("missingFinal is NOT flagged if journal has no finals in the group", () => {
@@ -628,7 +698,7 @@ test("exports student report as TSV with exceptionCandidate", () => {
   const tsv = exportStudentReportTsv(state, { groupCode: "TA", includeHeader: true, sortByName: false });
   const lines = tsv.split("\n");
 
-  assert.equal(lines[0].startsWith("groupCode\tfullname\tstatus\t"), true);
+  assert.equal(lines[0].startsWith("id\tgroupCode\tfullname\tstatus\t"), true);
   assert.equal(lines.length, 3);
 
   // S1 has a negative final in a problematic journal (2/2 missing-or-negative final = 100%)
