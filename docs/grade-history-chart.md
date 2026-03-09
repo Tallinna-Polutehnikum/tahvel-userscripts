@@ -39,3 +39,31 @@ The chart container (`#grade-history-marker`) is inserted before the first `.hoi
 - `chart.js` — loaded via `@require` in the userscript header (CDN)
 - `src/auth/authentication.js` — token helper
 - `src/auth/msal.js` — MSAL config wrapper
+- `src/modules/gradeHistory/gradeDataCollector.js` — data collection and submission module
+
+## Data Collection & Submission
+
+The grade history feature relies on a **separate backend service** (in another repository) to store and retrieve grade data. The data collection process is handled by `gradeDataCollector.js`:
+
+### Collection workflow
+1. **Group fetching**: Retrieves all student groups from Tahvel
+2. **Grade aggregation**: For each group, fetches student data and categorizes grades:
+   - Negative grades (X, MA, 1, 2)
+   - Fine grades (3)
+   - Good grades (4)
+   - Great grades (5)
+   - **Note:** SISSEKANNE_A (A = arvestatud/credited) is intentionally ignored as it's not a real grade and not comparable to grade 5. Drop in total grades count after fixing "MA" is a expected side-effect of this decision.
+3. **Data deduplication**: Keeps the most complete student record when a student appears in multiple groups
+4. **Backend submission**: POSTs aggregated student grade data to the backend
+5. **Weekly scheduling**: Runs automatically on Mondays, cached to prevent duplicate runs
+
+### API endpoints (backend service)
+- `POST {SERVER_URL}/api/StudentRecord/switch` — WIP: Toggles transaction mode for batch operations
+- `POST {SERVER_URL}/api/StudentRecord` — Submits individual student grade records
+
+### Backend refactoring note
+The `/switch` endpoint was originally implemented as a work-in-progress feature to manage database transactions for batch operations. However, this approach should be refactored to send the entire group dataset as a single array query instead of individual student records. This would:
+- Improve performance by reducing API calls
+- Simplify transaction handling
+- Reduce network overhead
+

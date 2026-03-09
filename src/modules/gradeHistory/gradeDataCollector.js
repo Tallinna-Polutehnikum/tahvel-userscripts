@@ -1,11 +1,11 @@
-import { Authentication } from '../auth/authentication.js';
+import { Authentication } from '../../auth/authentication.js';
 import * as env from 'env';
-import { fetchGroupByCode } from './reports/stipend-eligibility/windowApi.js';
+import { fetchGroupByCode } from '../reports/stipend-eligibility/windowApi.js';
 
 // Initialize MSAL authentication
 const auth = new Authentication();
 
-const STUDENT_DATA_LAST_RUN_KEY = 'tahvelUserscripts.studentData.lastRunAt';
+const GRADE_DATA_LAST_RUN_KEY = 'tahvelUserscripts.gradeDataCollector.lastRunAt';
 let isCollectionInProgress = false;
 
 function getIsoWeekInfo(date) {
@@ -28,13 +28,13 @@ function getIsoWeekKey(date) {
 
 function getLastRunDateFromStorage() {
   try {
-    const stored = localStorage.getItem(STUDENT_DATA_LAST_RUN_KEY);
+    const stored = localStorage.getItem(GRADE_DATA_LAST_RUN_KEY);
     if (!stored) return null;
 
     const parsed = new Date(stored);
     return Number.isFinite(parsed.getTime()) ? parsed : null;
   } catch (err) {
-    console.warn('Unable to read student data last run from localStorage', err);
+    console.warn('Unable to read grade data last run from localStorage', err);
     return null;
   }
 }
@@ -47,17 +47,17 @@ function hasRunInCurrentWeek(now = new Date()) {
 
 function storeLastRunDate(date = new Date()) {
   try {
-    localStorage.setItem(STUDENT_DATA_LAST_RUN_KEY, date.toISOString());
+    localStorage.setItem(GRADE_DATA_LAST_RUN_KEY, date.toISOString());
   } catch (err) {
-    console.warn('Unable to store student data last run in localStorage', err);
+    console.warn('Unable to store grade data last run in localStorage', err);
   }
 }
 
-export async function maybeRunStudentDataForCurrentWeek() {
+export async function maybeRunGradeDataForCurrentWeek() {
   const now = new Date();
   if (now.getDay() !== 1) return;
   if (hasRunInCurrentWeek(now)) return;
-  await calculateStudentData({ source: 'auto' });
+  await collectAndAggregateGradeData({ source: 'auto' });
 }
 
 const NEGATIVE_GRADE_CODES = new Set(['X', 'MA', '1', '2']);
@@ -71,8 +71,8 @@ function getGradeBucket(gradeCode) {
   if (NEGATIVE_GRADE_CODES.has(suffix)) return 'negative';
   if (suffix === '3') return 'fine';
   if (suffix === '4') return 'good';
-  // Treat A as top positive so total positive/total grade counters remain stable.
-  if (suffix === '5' || suffix === 'A') return 'great';
+  // Ignore SISSEKANNE_A, because it's not a real grade (not comparable to grade 5) and we don't use it in average. Side-effect to this is that fixing negative grades will lower total count of "grades".
+  if (suffix === '5') return 'great';
 
   return null;
 }
@@ -242,9 +242,9 @@ function getTotalGradeCount(grades) {
   );
 }
 
-export async function calculateStudentData({ source = 'manual' } = {}) {
+export async function collectAndAggregateGradeData({ source = 'manual' } = {}) {
   if (isCollectionInProgress) {
-    alert('Student data collection is already running.');
+    alert('Grade data collection is already running.');
     return;
   }
 
@@ -253,7 +253,7 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
   let groupData;
   let encounteredPostError = false;
 
-  alert(`Starting student data collection${source === 'auto' ? ' (weekly auto-run)' : ''}. This may take a while, keep your browser tab active.`);
+  alert(`Starting grade data collection${source === 'auto' ? ' (weekly auto-run)' : ''}. This may take a while, keep your browser tab active.`);
 
   try {
     try {
@@ -427,12 +427,12 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
     }
 
     if (encounteredPostError) {
-      console.warn('Student data collection ended with posting errors. Last run timestamp was not updated.');
+      console.warn('Grade data collection ended with posting errors. Last run timestamp was not updated.');
       return;
     }
 
     storeLastRunDate(new Date());
-    console.log('Student data collection complete.');
+    console.log('Grade data collection complete.');
   } finally {
     isCollectionInProgress = false;
   }

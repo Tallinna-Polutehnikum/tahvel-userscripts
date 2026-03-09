@@ -30,6 +30,7 @@ const registry = [];
  * @property {string} [screenshotUrl]
  * @property {boolean} defaultEnabled
  * @property {SubSetting[]} [settings]
+ * @property {string} [group] - Group name for menu organization (defaults to 'Settings')
  */
 
 /**
@@ -66,32 +67,65 @@ export function isFeatureEnabled(id) {
  * Generate one Tampermonkey menu entry per feature and per sub-setting.
  * Should be called once after all feature modules have been imported.
  * Each entry toggles the feature on/off and alerts the user to reload.
+ * Features are grouped by their `group` property, with Settings as the default.
  */
 export function generateMenuItems() {
   if (typeof GM_registerMenuCommand !== 'function') return;
 
+  // Group features by their group property
+  const groups = {};
   for (const feature of registry) {
-    const enabled = isFeatureEnabled(feature.id);
+    const groupName = feature.group ?? 'Settings';
+    if (!groups[groupName]) {
+      groups[groupName] = [];
+    }
+    groups[groupName].push(feature);
+  }
 
-    GM_registerMenuCommand(
-      `${enabled ? '✓' : '✗'} ${feature.label}`,
-      () => {
-        localStorage.setItem(STORAGE_PREFIX + feature.id, String(!enabled));
-        alert(`"${feature.label}" ${!enabled ? 'lubatud' : 'keelatud'}. Laadi leht uuesti.`);
-      }
-    );
+  // Register menu items grouped by category, with Settings group last
+  const groupOrder = Object.keys(groups).sort((a, b) => {
+    if (a === 'Settings') return 1;
+    if (b === 'Settings') return -1;
+    return a.localeCompare(b);
+  });
 
-    for (const sub of feature.settings ?? []) {
-      const subEnabled = isFeatureEnabled(sub.id);
+  let isFirstGroup = true;
+  for (const groupName of groupOrder) {
+    const features = groups[groupName];
+    const isSettingsGroup = groupName === 'Settings';
+
+    // Add a separator before the Settings group
+    if (isSettingsGroup && !isFirstGroup) {
+      GM_registerMenuCommand('————————————', () => {}); // Separator
+      GM_registerMenuCommand(`⚙️ ${groupName}`, () => {}); // Group header (non-interactive)
+    }
+
+    for (const feature of features) {
+      const enabled = isFeatureEnabled(feature.id);
+      const indent = isSettingsGroup ? '\u00a0\u00a0' : '';
 
       GM_registerMenuCommand(
-        `\u00a0\u00a0${subEnabled ? '✓' : '✗'} ${sub.label}`,
+        `${indent}${enabled ? '✓' : '✗'} ${feature.label}`,
         () => {
-          localStorage.setItem(STORAGE_PREFIX + sub.id, String(!subEnabled));
-          alert(`"${sub.label}" ${!subEnabled ? 'lubatud' : 'keelatud'}. Laadi leht uuesti.`);
+          localStorage.setItem(STORAGE_PREFIX + feature.id, String(!enabled));
+          alert(`"${feature.label}" ${!enabled ? 'lubatud' : 'keelatud'}. Laadi leht uuesti.`);
         }
       );
+
+      for (const sub of feature.settings ?? []) {
+        const subEnabled = isFeatureEnabled(sub.id);
+
+        GM_registerMenuCommand(
+          `${indent}\u00a0\u00a0${subEnabled ? '✓' : '✗'} ${sub.label}`,
+          () => {
+            localStorage.setItem(STORAGE_PREFIX + sub.id, String(!subEnabled));
+            alert(`"${sub.label}" ${!subEnabled ? 'lubatud' : 'keelatud'}. Laadi leht uuesti.`);
+          }
+        );
+      }
     }
+
+    isFirstGroup = false;
   }
 }
 

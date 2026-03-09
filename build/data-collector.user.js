@@ -1179,7 +1179,7 @@
     if (NEGATIVE_GRADE_CODES.has(suffix)) return "negative";
     if (suffix === "3") return "fine";
     if (suffix === "4") return "good";
-    if (suffix === "5" || suffix === "A") return "great";
+    if (suffix === "5") return "great";
     return null;
   }
   function incrementGradeBucket(counts, bucket, isFinal) {
