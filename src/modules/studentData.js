@@ -1,5 +1,6 @@
 import { Authentication } from '../auth/authentication.js';
 import * as env from 'env';
+import { fetchGroupByCode } from './reports/stipend-eligibility/windowApi.js';
 
 // Initialize MSAL authentication
 const auth = new Authentication();
@@ -252,7 +253,7 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
   let groupData;
   let encounteredPostError = false;
 
-  alert(`Starting student data collection${source === 'auto' ? ' (weekly auto-run)' : ''}. This may take a while.`);
+  alert(`Starting student data collection${source === 'auto' ? ' (weekly auto-run)' : ''}. This may take a while, keep your browser tab active.`);
 
   try {
     try {
@@ -280,7 +281,6 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
     // Server switch on
     try {
       await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: true });
-      console.log('Finished successfully');
     } catch (err) {
       if (err.message.includes('Unauthorized')) {
         console.error('Stopping due to 401 Unauthorized response.');
@@ -298,17 +298,32 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
 
     // Get group data for each group
     // Use for loop instead of forEach to handle async/await properly
+    const totalGroups = groupData.content.length;
+    let groupIndex = 0;
     for (const groupEntry of groupData.content) {
-      const curriculumVersion = normalizeCurriculumVersion(groupEntry?.curriculumVersion);
+      groupIndex++;
+      if (groupIndex % 5 === 0 || groupIndex === totalGroups) {
+        console.log(`${(groupIndex / totalGroups * 100).toFixed(0)}% Processing group ${groupIndex} of ${totalGroups} (${groupEntry.code})`);
+      }
+      // fetchGroupByCode is cache-backed (30-day localStorage TTL) so this is
+      // effectively free on repeat runs; it only hits the network on first use.
+      // Falls back to the student-groups list values when no match is found.
+      const cachedMatch = await fetchGroupByCode(groupEntry?.code, {valid: false});
+      const resolvedGroupId = cachedMatch?.id ?? groupEntry.id;
+      const curriculumVersion = normalizeCurriculumVersion(
+        cachedMatch?.curriculumVersion ?? groupEntry?.curriculumVersion
+      );
+
       if (curriculumVersion == null) {
         console.warn('Skipping group because curriculumVersion is missing', {
           groupId: groupEntry?.id,
           groupCode: groupEntry?.code,
+          cachedMatchFound: cachedMatch != null,
         });
         continue;
       }
 
-      const reportUrl = buildStudentGroupTeacherReportUrl(groupEntry.id, curriculumVersion);
+      const reportUrl = buildStudentGroupTeacherReportUrl(resolvedGroupId, curriculumVersion);
       const groupResponse = await fetch(reportUrl);
       if (!groupResponse.ok) {
         console.error(`Failed to fetch report for group ${groupEntry.id} (${groupEntry.code}) with status ${groupResponse.status}`);
@@ -370,12 +385,18 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
         if (nextTotal > existingTotal) bestStudentDataById.set(studentData.id, studentData);
       }
     }
+    console.log(`Collected data for ${bestStudentDataById.size} unique students across ${groupData.totalElements} groups.`);
 
-    // Post one chosen snapshot per student
+    // Post one snapshot per student
+    let count = 0;
     for (const studentData of bestStudentDataById.values()) {
       try {
         await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord', studentData);
-        console.log('Finished successfully');
+        count++;
+        // Print progress every 100 students to avoid spamming the console
+        if (count % 100 === 0) {
+          console.log(`${((count / bestStudentDataById.size) * 100).toFixed(0)}% Posted data for ${count} of ${bestStudentDataById.size} students.`);
+        }
       } catch (err) {
         encounteredPostError = true;
         if (err.message.includes('Unauthorized')) {
@@ -393,7 +414,6 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
     // Server switch off
     try {
       await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: false });
-      console.log('Finished successfully');
     } catch (err) {
       if (err.message.includes('Unauthorized')) {
         console.error('Stopping due to 401 Unauthorized response.');
@@ -412,7 +432,6 @@ export async function calculateStudentData({ source = 'manual' } = {}) {
     }
 
     storeLastRunDate(new Date());
-    alert('Student data collection complete.');
     console.log('Student data collection complete.');
   } finally {
     isCollectionInProgress = false;
@@ -435,16 +454,15 @@ async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
     });
 
     if (response.status === 200) {
-      console.log('Success');
       return;
     } else if (response.status === 401) {
       throw new Error(`Unauthorized: Access token may be invalid or expired.`);
     } else {
       retries++;
-      console.log(`Attempt ${retries} failed with status ${response.status}. Retrying in ${delayMs}ms...`);
+      console.log(`Attempt ${retries} failed with status ${response.status} for student ${data.id}. Retrying in ${delayMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 
-  throw new Error(`Max retries reached without success.`);
+  throw new Error(`Max retries reached without success for student ${data.id}. Last response status: ${response.status}`);
 }

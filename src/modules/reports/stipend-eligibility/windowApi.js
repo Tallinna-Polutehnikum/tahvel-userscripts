@@ -1,6 +1,7 @@
 import { normalizeGroupReport } from "./normalize.js";
 import { aggregateAll } from "./aggregate.js";
 import { exportStudentReportTsv, exportSubjectReportTsv, studentToTsvRow } from "./tsv.js";
+import { createLocalStorageCache } from "../../../utils/localStorageCache.js";
 
 function getRootWindow() {
   // Tampermonkey/Greasemonkey: expose into page context when possible
@@ -53,16 +54,59 @@ function normalizeCode(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function findExactAutocompleteMatch(candidates, groupCode) {
-  const wanted = normalizeCode(groupCode);
-  if (!wanted || !Array.isArray(candidates)) return null;
+// ---------------------------------------------------------------------------
+// Group-by-code cache – private implementation detail of fetchGroupByCode
+// ---------------------------------------------------------------------------
 
-  return (
-    candidates.find(c => normalizeCode(c?.nameEt) === wanted) ??
-    candidates.find(c => normalizeCode(c?.nameEn) === wanted) ??
-    candidates.find(c => normalizeCode(c?.nameRu) === wanted) ??
-    null
-  );
+const groupCodeCache = createLocalStorageCache({
+  storageKey: "groupFromCodeAutocompleteCache",
+  normalizeKey: (k) => String(k ?? "").trim().toUpperCase(),
+  getLocalStorage: () => getRootWindow()?.localStorage ?? null
+});
+
+/**
+ * Returns the group record that exactly matches `groupCode` (case-insensitive).
+ * Results are cached in localStorage for 30 days; subsequent calls for the same
+ * code return immediately without hitting the network.
+ * Returns `null` when no exact match exists.
+ */
+export async function fetchGroupByCode(groupCode, {
+  apiBase,
+  lang = "ET",
+  basic = true,
+  secondary = true,
+  valid = true,
+  vocational = true
+} = {}) {
+  const cached = groupCodeCache.get(groupCode);
+  if (cached !== undefined) return cached;
+
+  const root = getRootWindow();
+  if (!root) throw new Error("No window context available");
+
+  const base = apiBase ?? `${root.location.origin}/hois_back`;
+  const wanted = normalizeCode(groupCode);
+
+  const url = new URL(`${base}/autocomplete/studentgroups`);
+  url.searchParams.set("basic", String(Boolean(basic)));
+  url.searchParams.set("lang", String(lang));
+  url.searchParams.set("name", String(groupCode));
+  url.searchParams.set("secondary", String(Boolean(secondary)));
+  url.searchParams.set("valid", String(Boolean(valid)));
+  url.searchParams.set("vocational", String(Boolean(vocational)));
+
+  const candidates = await fetchJsonWithAuth(root, url.toString());
+  const group = (!Array.isArray(candidates) || !wanted)
+    ? null
+    : (
+        candidates.find(c => normalizeCode(c?.nameEt) === wanted) ??
+        candidates.find(c => normalizeCode(c?.nameEn) === wanted) ??
+        candidates.find(c => normalizeCode(c?.nameRu) === wanted) ??
+        null
+      );
+
+  groupCodeCache.set(groupCode, group);
+  return group;
 }
 
 async function fetchAllStudentGroups({
@@ -130,42 +174,15 @@ async function fetchAllStudentGroups({
   return all;
 }
 
-async function fetchStudentGroupAutocomplete(groupCode, {
-  apiBase,
-  lang = "ET",
-  basic = true,
-  secondary = true,
-  valid = true,
-  vocational = true
-} = {}) {
-  const root = getRootWindow();
-  if (!root) throw new Error("No window context available");
-
-  const base = apiBase ?? `${root.location.origin}/hois_back`;
-
-  const url = new URL(`${base}/autocomplete/studentgroups`);
-  url.searchParams.set("basic", String(Boolean(basic)));
-  url.searchParams.set("lang", String(lang));
-  url.searchParams.set("name", String(groupCode));
-  url.searchParams.set("secondary", String(Boolean(secondary)));
-  url.searchParams.set("valid", String(Boolean(valid)));
-  url.searchParams.set("vocational", String(Boolean(vocational)));
-
-  const payload = await fetchJsonWithAuth(root, url.toString());
-  return Array.isArray(payload) ? payload : [];
-}
-
 async function resolveGroupReportParams(groupCode, opts = {}) {
-  const candidates = await fetchStudentGroupAutocomplete(groupCode, opts);
-  const exact = findExactAutocompleteMatch(candidates, groupCode);
+  const group = await fetchGroupByCode(groupCode, opts);
 
   return {
     groupCode,
-    exactMatchFound: Boolean(exact),
-    studentGroup: exact?.id ?? null,
-    curriculumVersion: exact?.curriculumVersion ?? null,
-    autocompleteMatch: exact ?? null,
-    autocompleteCandidates: candidates
+    exactMatchFound: Boolean(group),
+    studentGroup: group?.id ?? null,
+    curriculumVersion: group?.curriculumVersion ?? null,
+    group: group ?? null
   };
 }
 
@@ -209,8 +226,7 @@ async function resolveAllGroupReportParams({
           groupIdFromStudentGroups: item.id,
           curriculumVersionFromStudentGroups: item.curriculumVersionFromGroups,
           teacher: item.teacher,
-          autocompleteMatch: resolved.autocompleteMatch,
-          autocompleteCandidates: resolved.autocompleteCandidates,
+          group: resolved.group,
           source: item.source
         };
       } catch (error) {
@@ -231,8 +247,7 @@ async function resolveAllGroupReportParams({
           groupIdFromStudentGroups: item.id,
           curriculumVersionFromStudentGroups: item.curriculumVersionFromGroups,
           teacher: item.teacher,
-          autocompleteMatch: null,
-          autocompleteCandidates: [],
+          group: null,
           source: item.source,
           error: error?.message ?? String(error)
         };
@@ -557,7 +572,7 @@ function attachToWindow() {
     exportSubjectReportTsv,
     studentToTsvRow,
     fetchAllStudentGroups,
-    fetchStudentGroupAutocomplete,
+    fetchGroupByCode,
     resolveGroupReportParams,
     resolveAllGroupReportParams,
     aggregateAndExportAllGroups,
