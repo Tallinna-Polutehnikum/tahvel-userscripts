@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Täiendatud Tahvel Õpetajale
 // @namespace    https://tahvel.edu.ee/
-// @version      1.5.6
+// @version      1.5.7
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
 // @author       Timo Triisa, Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -14,7 +14,7 @@
 // ==/UserScript==
 
 (() => {
-  // src/modules/randomRequest.js
+  // src/modules/sessionKeepAlive.js
   setInterval(() => {
     fetch("https://tahvel.edu.ee/hois_back/user", {
       method: "GET",
@@ -24,7 +24,7 @@
   }, 12e4);
 
   // src/version.js
-  var version = "1.5.6";
+  var version = "1.5.7";
 
   // src/modules/usageLogger.js
   setTimeout(async () => {
@@ -129,6 +129,11 @@
     { roomNumber: "B513", seats: "8", computers: "", area: "25", board: "", os: "" }
   ];
 
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
   // src/auth/msal.js
   var Msal = class {
     #instance;
@@ -147,8 +152,8 @@
     #initMsal() {
       const msalConfig = {
         auth: {
-          clientId: void 0,
-          authority: "https://login.microsoftonline.com/" + void 0,
+          clientId: MSAL_CLIENT_ID,
+          authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
           redirectUri: "https://tahvel.edu.ee/"
         },
         cache: { cacheLocation: "localStorage" }
@@ -201,7 +206,7 @@
       if (this.#accounts.length === 0) return false;
       this.msalInstance.setActiveAccount(this.#accounts[0]);
       try {
-        this.msalInstance.acquireTokenSilent({ scopes: [void 0 + "/.default"], account: this.#accounts[0] });
+        this.msalInstance.acquireTokenSilent({ scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] });
         return true;
       } catch (error) {
         console.error("Token acquisition failed: ", error);
@@ -209,7 +214,7 @@
       }
     }
     async getToken() {
-      const silentRequest = { scopes: [void 0 + "/.default"], account: this.#accounts[0] };
+      const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
       if (!this.checkAuth()) {
         this.login();
         return null;
@@ -534,7 +539,7 @@
         return studentData[studentId];
       }
       const accessToken = await auth.getToken();
-      const apiResponse = await fetch(void 0 + `/api/StudentRecord/Student/${studentId}`, {
+      const apiResponse = await fetch(SERVER_URL + `/api/StudentRecord/Student/${studentId}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
       }).then((res) => res.json());

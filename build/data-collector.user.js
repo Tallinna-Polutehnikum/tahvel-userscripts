@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Data collector
 // @namespace    https://tahvel.edu.ee/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Student data collector for Tahvel.
 // @author       Sven Laht
 // @match        https://tahvel.edu.ee/*
@@ -21,6 +21,11 @@
     });
   }, 12e4);
 
+  // env-ns:env
+  var SERVER_URL = "https://spea-oppeinfo-backend-degadahhfye5dwdq.northeurope-01.azurewebsites.net";
+  var MSAL_CLIENT_ID = "fcac3ba0-9a07-43b7-89b5-d030e32bae00";
+  var MSAL_TENANT_ID = "b1d764c3-8351-46bf-8da7-32febf83332d";
+
   // src/auth/msal.js
   var Msal = class {
     #instance;
@@ -39,8 +44,8 @@
     #initMsal() {
       const msalConfig = {
         auth: {
-          clientId: void 0,
-          authority: "https://login.microsoftonline.com/" + void 0,
+          clientId: MSAL_CLIENT_ID,
+          authority: "https://login.microsoftonline.com/" + MSAL_TENANT_ID,
           redirectUri: "https://tahvel.edu.ee/"
         },
         cache: { cacheLocation: "localStorage" }
@@ -93,7 +98,7 @@
       if (this.#accounts.length === 0) return false;
       this.msalInstance.setActiveAccount(this.#accounts[0]);
       try {
-        this.msalInstance.acquireTokenSilent({ scopes: [void 0 + "/.default"], account: this.#accounts[0] });
+        this.msalInstance.acquireTokenSilent({ scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] });
         return true;
       } catch (error) {
         console.error("Token acquisition failed: ", error);
@@ -101,7 +106,7 @@
       }
     }
     async getToken() {
-      const silentRequest = { scopes: [void 0 + "/.default"], account: this.#accounts[0] };
+      const silentRequest = { scopes: [MSAL_CLIENT_ID + "/.default"], account: this.#accounts[0] };
       if (!this.checkAuth()) {
         this.login();
         return null;
@@ -322,7 +327,7 @@
         }
       }
       try {
-        await postUntilSuccess(void 0 + "/api/StudentRecord/switch", { id: requestId, isOn: true });
+        await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: true });
         console.log("Finished successfully");
       } catch (err) {
         if (err.message.includes("Unauthorized")) {
@@ -397,7 +402,7 @@
       }
       for (const studentData of bestStudentDataById.values()) {
         try {
-          await postUntilSuccess(void 0 + "/api/StudentRecord", studentData);
+          await postUntilSuccess(SERVER_URL + "/api/StudentRecord", studentData);
           console.log("Finished successfully");
         } catch (err) {
           encounteredPostError = true;
@@ -413,7 +418,7 @@
         }
       }
       try {
-        await postUntilSuccess(void 0 + "/api/StudentRecord/switch", { id: requestId, isOn: false });
+        await postUntilSuccess(SERVER_URL + "/api/StudentRecord/switch", { id: requestId, isOn: false });
         console.log("Finished successfully");
       } catch (err) {
         if (err.message.includes("Unauthorized")) {
