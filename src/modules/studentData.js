@@ -4,150 +4,101 @@ import * as env from 'env';
 // Initialize MSAL authentication
 const auth = new Authentication();
 
-const STUDENT_DATA_LAST_RUN_KEY = 'tahvelUserscripts.studentData.lastRunAt';
+const studentDataLastRunKey = 'tahvelUserscripts.studentData.lastRunAt';
 let isCollectionInProgress = false;
 
-function getIsoWeekInfo(date) {
-  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = utcDate.getUTCDay() || 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
-
-  return {
-    year: utcDate.getUTCFullYear(),
-    week,
+async function collectStudentData() {
+  if (isCollectionInProgress) {
+    alert('Student data collection is already in progress.');
+    return;
   };
-}
+  isCollectionInProgress = true;
 
-function getIsoWeekKey(date) {
-  const { year, week } = getIsoWeekInfo(date);
-  return `${year}-W${String(week).padStart(2, '0')}`;
-}
+  let groupsData;
 
-function getLastRunDateFromStorage() {
+  alert('Starting student data collection. This may take a while.');
+
+  const scriptStart = performance.now();
+
   try {
-    const stored = localStorage.getItem(STUDENT_DATA_LAST_RUN_KEY);
-    if (!stored) return null;
+    // Fetch all groups
+    try {
+      groupsData = await getStudentGroups();
+      // Fetch all groups using totalElements from first fetch
+      groupsData = await getStudentGroups(groupsData.totalElements);
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    };
 
-    const parsed = new Date(stored);
-    return Number.isFinite(parsed.getTime()) ? parsed : null;
-  } catch (err) {
-    console.warn('Unable to read student data last run from localStorage', err);
-    return null;
-  }
-}
+    const emptyGroups = getEmptyGroups();
 
-function hasRunInCurrentWeek(now = new Date()) {
-  const lastRunDate = getLastRunDateFromStorage();
-  if (!lastRunDate) return false;
-  return getIsoWeekKey(lastRunDate) === getIsoWeekKey(now);
-}
+    // Go through each group, gather student data and POST to server
+    for (const group of groupsData.content) {
+      if (emptyGroups.includes(group.id)) continue; // Skip groups that were previously found to be empty
 
-function storeLastRunDate(date = new Date()) {
-  try {
-    localStorage.setItem(STUDENT_DATA_LAST_RUN_KEY, date.toISOString());
-  } catch (err) {
-    console.warn('Unable to store student data last run in localStorage', err);
-  }
-}
+      const groupId = group.id;
+      const groupData = await getGroupData(groupId);
 
-export async function maybeRunStudentDataForCurrentWeek() {
+      let groupResult = {
+        groupId: groupId,
+        groupCode: group.code,
+        students: [],
+      }
+
+      // Process each student in the group
+      for (const student of groupData.students) {
+        const studentResult = countAndFormatStudentResult(student);
+
+        groupResult.students.push(studentResult);
+      }
+
+      // Post data to server
+      try {
+        if (groupResult.students.length === 0) {
+          addEmptyGroups(groupId);
+
+          console.log(`Group (id: ${groupId}, code: ${group.code}) has no students. Skipping.`);
+
+          continue;
+        }; // Skip and store empty groups
+
+        const url = env.SERVER_URL + '/api/StudentRecord';
+
+        const response = await postUntilSuccess(url, groupResult);
+
+        console.log(`POST request for group (id: ${groupId}, code: ${group.code}). Server response (inserted: ${response.response.inserted}, skipped: ${response.response.skipped}). Time taken: ${response.time} ms`);
+      } catch (err) {
+        console.error(err);
+      };
+    };
+  } finally {
+    isCollectionInProgress = false;
+
+    const scriptEnd = performance.now();
+    console.log(`Data gathering time: ${((scriptEnd - scriptStart) / 60000).toFixed(2)} mins`);
+
+    alert('Student data collection finished.');
+  };
+};
+
+async function autoRunCollectStudentData() {
   const now = new Date();
-  if (now.getDay() !== 1) return;
-  if (hasRunInCurrentWeek(now)) return;
-  await calculateStudentData({ source: 'auto' });
-}
+  if (now.getDay() !== 1) return; // Only run on Mondays
+  // Has data collection ran this week.
+  await collectStudentData();
+};
 
-const NEGATIVE_GRADE_CODES = new Set(['X', 'MA', '1', '2']);
+export {
+  collectStudentData,
+  autoRunCollectStudentData
+};
 
-function getGradeBucket(gradeCode) {
-  if (typeof gradeCode !== 'string') return null;
+// Helper functions
 
-  const suffix = gradeCode.split('_').pop();
-  if (!suffix) return null;
-
-  if (NEGATIVE_GRADE_CODES.has(suffix)) return 'negative';
-  if (suffix === '3') return 'fine';
-  if (suffix === '4') return 'good';
-  // Treat A as top positive so total positive/total grade counters remain stable.
-  if (suffix === '5' || suffix === 'A') return 'great';
-
-  return null;
-}
-
-function incrementGradeBucket(counts, bucket, isFinal) {
-  if (!bucket) return;
-
-  const key = isFinal
-    ? (`final${bucket.charAt(0).toUpperCase()}${bucket.slice(1)}Grades`)
-    : (`${bucket}Grades`);
-
-  counts[key] += 1;
-}
-
-function getEntryTimestamp(entry) {
-  const sourceDate = entry?.entryDate ?? entry?.gradeInserted ?? null;
-  if (!sourceDate) return 0;
-
-  const parsed = Date.parse(sourceDate);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function pickEffectivePeriodBucket(periodEntries) {
-  if (!Array.isArray(periodEntries) || periodEntries.length === 0) return null;
-
-  // If any period grade is negative, treat the journal as negative final-like.
-  const negativePeriod = periodEntries.find(entry => getGradeBucket(entry?.grade?.code) === 'negative');
-  if (negativePeriod) return 'negative';
-
-  // Otherwise use the latest positive period grade as the final-like state.
-  let latest = null;
-  let latestTs = -Infinity;
-  for (const entry of periodEntries) {
-    const bucket = getGradeBucket(entry?.grade?.code);
-    if (!bucket) continue;
-
-    const ts = getEntryTimestamp(entry);
-    if (!latest || ts >= latestTs) {
-      latest = bucket;
-      latestTs = ts;
-    }
-  }
-
-  return latest;
-}
-
-function pickLatestFinalBucket(finalEntries) {
-  if (!Array.isArray(finalEntries) || finalEntries.length === 0) return null;
-
-  let latest = null;
-  let latestTs = -Infinity;
-  for (const entry of finalEntries) {
-    const bucket = getGradeBucket(entry?.grade?.code);
-    if (!bucket) continue;
-
-    const ts = getEntryTimestamp(entry);
-    if (!latest || ts >= latestTs) {
-      latest = bucket;
-      latestTs = ts;
-    }
-  }
-
-  return latest;
-}
-
-function normalizeCurriculumVersion(value) {
-  if (typeof value === 'number' || typeof value === 'string') return value;
-  if (value && typeof value === 'object') {
-    if (typeof value.id === 'number' || typeof value.id === 'string') return value.id;
-  }
-  return null;
-}
-
-function buildStudentGroupTeacherReportUrl(groupId, curriculumVersion) {
+function buildGroupDataUrl(groupId) {
   const url = new URL('https://tahvel.edu.ee/hois_back/reports/studentgroupteacher');
-
+  
   const entryTypeMap = {
     SISSEKANNE_H: true,
     SISSEKANNE_R: true,
@@ -161,282 +112,174 @@ function buildStudentGroupTeacherReportUrl(groupId, curriculumVersion) {
 
   const sp = url.searchParams;
   sp.set('canceledStudents', 'false');
-  sp.set('curriculumVersion', String(curriculumVersion));
+  // sp.set('curriculumVersion', '6478');
   sp.set('entryType', JSON.stringify(entryTypeMap));
   for (const type of Object.keys(entryTypeMap)) {
     if (entryTypeMap[type]) sp.append('entryTypes', type);
   }
   sp.set('from', '2022-08-01T00:00:00.000Z');
   sp.set('graduatedStudents', 'false');
-  sp.set('lang', 'ET');
+  // sp.set('lang', 'ET');
   sp.set('studentGroup', String(groupId));
-  sp.set('studyYear', '');
+  // sp.set('studyYear', '');
 
   return url.toString();
 }
 
-function countStudentGrades(student) {
-  const counts = {
-    negativeGrades: 0,
-    finalNegativeGrades: 0,
-    fineGrades: 0,
-    finalFineGrades: 0,
-    goodGrades: 0,
-    finalGoodGrades: 0,
-    greatGrades: 0,
-    finalGreatGrades: 0,
+function countAndFormatStudentResult(student) {
+  let studentResult = {
+    id: student.id,
+    grades: {
+      negative: {
+        grades: 0,
+        finalGrades: 0,
+      },
+      acceptable: {
+        grades: 0,
+        finalGrades: 0,
+      },
+      fine: {
+        grades: 0,
+        finalGrades: 0,
+      },
+      good: {
+        grades: 0,
+        finalGrades: 0,
+      },
+      great: {
+        grades: 0,
+        finalGrades: 0,
+      },
+    },
+    absences: {
+      withReason: student.absenceTypeTotals.PUUDUMINE_V,
+      noReason: student.absenceTypeTotals.PUUDUMINE_P,
+      metric: student.lessonAbsencePercentage,
+    },
   };
 
-  const resultColumns = Array.isArray(student?.resultColumns) ? student.resultColumns : [];
-  for (const column of resultColumns) {
-    const journalResult = column?.journalResult;
-    if (!journalResult) continue;
+  const gradeCategory = {
+    X: "negative",
+    MA: "negative",
+    1: "negative",
+    2: "negative",
+    A: "acceptable",
+    3: "fine",
+    4: "good",
+    5: "great",
+  };
 
-    const results = Array.isArray(journalResult.results) ? journalResult.results : [];
-    if (journalResult.existsInJournal === false && results.length === 0) continue;
-
-    /** @type {any[]} */
-    const finalEntries = [];
-    /** @type {any[]} */
-    const periodEntries = [];
-
-    for (const result of results) {
-      const bucket = getGradeBucket(result?.grade?.code);
-      if (!bucket) continue;
-
-      if (result?.entryType === 'SISSEKANNE_L') {
-        finalEntries.push(result);
-        continue;
-      }
-
-      if (result?.entryType === 'SISSEKANNE_R') {
-        periodEntries.push(result);
-        continue;
-      }
-
-      // Regular grade: any graded entry that is not final/period.
-      incrementGradeBucket(counts, bucket, false);
+  function incrementGrade(grade, field) {
+    const category = gradeCategory[grade];
+    if (category) {
+      studentResult.grades[category][field]++;
     }
-
-    // Effective final per journal:
-    // 1) use latest SISSEKANNE_L when it exists
-    // 2) otherwise derive from SISSEKANNE_R (negative wins, else latest positive)
-    const finalBucket = pickLatestFinalBucket(finalEntries) ?? pickEffectivePeriodBucket(periodEntries);
-    incrementGradeBucket(counts, finalBucket, true);
   }
 
-  return counts;
-}
+  // Remove SISSEKANNE_ prefix and get grade code
+  function getGradeFromCode(gradeCode) {
+    const split = gradeCode.split('_');
+    return split[1];
+  };
+  
+  const entryTypeToField = (entryType) => ({
+    SISSEKANNE_L: "finalGrades", // Consider special role for SISSEKANNE_R
+  })[entryType] ?? "grades";
 
-function getTotalGradeCount(grades) {
-  return (
-    (grades?.negativeGrades ?? 0) +
-    (grades?.finalNegativeGrades ?? 0) +
-    (grades?.fineGrades ?? 0) +
-    (grades?.finalFineGrades ?? 0) +
-    (grades?.goodGrades ?? 0) +
-    (grades?.finalGoodGrades ?? 0) +
-    (grades?.greatGrades ?? 0) +
-    (grades?.finalGreatGrades ?? 0)
-  );
-}
+  // Count and filter student grades
+  for (const column of student.resultColumns) {
+    const journal = column.journalResult;
+    if (!journal?.existsInJournal) continue;
 
-export async function calculateStudentData({ source = 'manual' } = {}) {
-  if (isCollectionInProgress) {
-    alert('Student data collection is already running.');
-    return;
+    for (const result of journal.results) {
+      const field = entryTypeToField(result.entryType);
+      if (!field || !result.grade?.code) continue;
+      if (result.entryType === "SISSEKANNE_R") continue; // Skip SISSEKANNE_R for now, as it may require special handling
+
+      incrementGrade(getGradeFromCode(result.grade.code), field);
+    }
   }
 
-  isCollectionInProgress = true;
-  const requestId = Math.floor(Math.random() * 1000000);
-  let groupData;
-  let encounteredPostError = false;
+  return studentResult;
+}
 
-  alert(`Starting student data collection${source === 'auto' ? ' (weekly auto-run)' : ''}. This may take a while.`);
+const emptyGroupsKey = 'tahvelUserscripts.studentData.emptyGroups';
+
+function getEmptyGroups() {
+  const emptyGroupsJson = localStorage.getItem(emptyGroupsKey);
+  return emptyGroupsJson ? JSON.parse(emptyGroupsJson) : [];
+}
+
+function addEmptyGroups(groupId) {
+  const emptyGroups = getEmptyGroups();
+  if (!emptyGroups.includes(groupId)) {
+    emptyGroups.push(groupId);
+    localStorage.setItem(emptyGroupsKey, JSON.stringify(emptyGroups));
+  }
+}
+
+// GET, POST data functions
+
+async function getStudentGroups(size = 0) {
+  const url = (size) => `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${size}&sort=CODE`;
+
+  const response = await fetch(url(size));
+
+  if (!response.ok) {
+    if (response.status === 400) {
+      throw new Error("Bad Request: please check your credentials.");
+    } else {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+  }
 
   try {
-    try {
-      // Fetch one group for totalElements count to know how many to fetch in the next request
-      groupData = await fetch('https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=1&sort=CODE');
-      groupData = await groupData.json();
-
-      // Fetch all groups using totalElements from first fetch
-      groupData = await fetch(
-        `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${groupData.totalElements}&sort=CODE`
-      );
-      groupData = await groupData.json();
-    } catch (err) {
-      if (err.message.includes('Bad')) {
-        console.error('Stopping due to 400 bad request.');
-        alert('Please check your credentials.');
-        return;
-      } else {
-        console.error(err);
-        alert('An error occurred while fetching group data. Check console for details.');
-        return;
-      }
-    }
-
-    // Server switch on
-    try {
-      await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: true });
-      console.log('Finished successfully');
-    } catch (err) {
-      if (err.message.includes('Unauthorized')) {
-        console.error('Stopping due to 401 Unauthorized response.');
-        alert('Unauthorized access. Please check your credentials.');
-        return;
-      } else {
-        console.error(err);
-        alert('An error occurred while switching on the server. Check console for details.');
-        return;
-      }
-    }
-
-    // Keep one snapshot per student to avoid same-run overwrites when a student appears in multiple groups.
-    const bestStudentDataById = new Map();
-
-    // Get group data for each group
-    // Use for loop instead of forEach to handle async/await properly
-    for (const groupEntry of groupData.content) {
-      const curriculumVersion = normalizeCurriculumVersion(groupEntry?.curriculumVersion);
-      if (curriculumVersion == null) {
-        console.warn('Skipping group because curriculumVersion is missing', {
-          groupId: groupEntry?.id,
-          groupCode: groupEntry?.code,
-        });
-        continue;
-      }
-
-      const reportUrl = buildStudentGroupTeacherReportUrl(groupEntry.id, curriculumVersion);
-      const groupResponse = await fetch(reportUrl);
-      if (!groupResponse.ok) {
-        console.error(`Failed to fetch report for group ${groupEntry.id} (${groupEntry.code}) with status ${groupResponse.status}`);
-        continue;
-      }
-      const group = await groupResponse.json();
-
-      if (group.students.length === 0) {
-        continue;
-      }
-
-      // Use for loop instead of forEach to handle async/await properly
-      for (const student of group.students) {
-        const {
-          negativeGrades,
-          finalNegativeGrades,
-          fineGrades,
-          finalFineGrades,
-          goodGrades,
-          finalGoodGrades,
-          greatGrades,
-          finalGreatGrades,
-        } = countStudentGrades(student);
-
-        // Count absences
-        const absenceWithReason = student?.absenceTypeTotals?.PUUDUMINE_V ?? 0;
-        const absenceNoReason = student?.absenceTypeTotals?.PUUDUMINE_P ?? 0;
-
-        // Format student data
-        let studentData = {
-          id: student.id,
-          name: student.fullname,
-          groupId: groupEntry.id,
-          groupCode: groupEntry.code,
-          grades: {
-            negativeGrades,
-            finalNegativeGrades,
-
-            fineGrades,
-            finalFineGrades,
-
-            goodGrades,
-            finalGoodGrades,
-
-            greatGrades,
-            finalGreatGrades,
-          },
-          absences: { absenceWithReason, absenceNoReason, calculatedMetric: student.lessonAbsencePercentage ?? 0 },
-        };
-
-        const existingStudentData = bestStudentDataById.get(studentData.id);
-        if (!existingStudentData) {
-          bestStudentDataById.set(studentData.id, studentData);
-          continue;
-        }
-
-        const nextTotal = getTotalGradeCount(studentData.grades);
-        const existingTotal = getTotalGradeCount(existingStudentData.grades);
-        if (nextTotal > existingTotal) bestStudentDataById.set(studentData.id, studentData);
-      }
-    }
-
-    // Post one chosen snapshot per student
-    for (const studentData of bestStudentDataById.values()) {
-      try {
-        await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord', studentData);
-        console.log('Finished successfully');
-      } catch (err) {
-        encounteredPostError = true;
-        if (err.message.includes('Unauthorized')) {
-          console.error('Stopping due to 401 Unauthorized response.');
-          alert('Unauthorized access. Please check your credentials.');
-          break;
-        } else {
-          console.error(err);
-          alert('An error occurred while posting student data. Check console for details.');
-          break;
-        }
-      }
-    }
-
-    // Server switch off
-    try {
-      await postUntilSuccess(env.SERVER_URL + '/api/StudentRecord/switch', { id: requestId, isOn: false });
-      console.log('Finished successfully');
-    } catch (err) {
-      if (err.message.includes('Unauthorized')) {
-        console.error('Stopping due to 401 Unauthorized response.');
-        alert('Unauthorized access. Please check your credentials.');
-        return;
-      } else {
-        console.error(err);
-        alert('An error occurred while switching off the server. Check console for details.');
-        return;
-      }
-    }
-
-    if (encounteredPostError) {
-      console.warn('Student data collection ended with posting errors. Last run timestamp was not updated.');
-      return;
-    }
-
-    storeLastRunDate(new Date());
-    alert('Student data collection complete.');
-    console.log('Student data collection complete.');
-  } finally {
-    isCollectionInProgress = false;
+    return await response.json();
+  } catch (err) {
+    throw new Error(`Failed to parse JSON: ${err.message}`);
   }
-}
+};
+
+async function getGroupData(groupId) {
+  const url = buildGroupDataUrl(groupId);
+
+  const response = await fetch(url);
+  
+  if (!response.ok) {
+    if (response.status === 400) {
+      throw new Error("Bad Request: please check your credentials.");
+    } else {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+  }
+
+  try {
+    return await response.json();
+  } catch (err) {
+    throw new Error(`Failed to parse JSON: ${err.message}`);
+  }
+};
 
 async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
   let retries = 0;
   const token = await auth.getToken(); // Acquire access token once before retry loop
+  const postUntilSuccessStart = performance.now();
 
   while (retries < maxRetries) {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`, // Add the token here
+        'Authorization': `Bearer ${token}`,
       },
       credentials: 'include',
       body: JSON.stringify(data),
     });
 
     if (response.status === 200) {
-      console.log('Success');
-      return;
+      const postUntilSuccessEnd = performance.now();
+
+      return { response: await response.json(), time: (postUntilSuccessEnd - postUntilSuccessStart).toFixed(2) };
     } else if (response.status === 401) {
       throw new Error(`Unauthorized: Access token may be invalid or expired.`);
     } else {
@@ -447,4 +290,4 @@ async function postUntilSuccess(url, data, maxRetries = 5, delayMs = 500) {
   }
 
   throw new Error(`Max retries reached without success.`);
-}
+};

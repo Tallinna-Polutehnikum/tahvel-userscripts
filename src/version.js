@@ -1,2 +1,2 @@
-export const version = '1.5.7';
-export const dataCollectorVersion = '1.1.1';
+export const version = '1.6.0';
+export const dataCollectorVersion = '2.0.0';

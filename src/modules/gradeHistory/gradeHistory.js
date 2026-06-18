@@ -224,6 +224,9 @@ function manageChart(graph, data) {
                 legendItem.text !== 'lõpphindeid kokku',
             },
           },
+          annotation: {
+            annotations: outagesToAnnotations(data.outages),
+          }
         },
         scales: { y: { stacked: true, beginAtZero: true } },
         responsive: true,
@@ -270,6 +273,7 @@ function processData(data) {
     grades: {
       dates: [],
       negativeGrades: [],
+      acceptableGrades: [],
       positiveGrades: [],
       fineGrades: [],
       goodGrades: [],
@@ -280,6 +284,7 @@ function processData(data) {
     finalGrades: {
       dates: [],
       negativeFinalGrades: [],
+      acceptableFinalGrades: [],
       positiveFinalGrades: [],
       fineFinalGrades: [],
       goodFinalGrades: [],
@@ -288,13 +293,14 @@ function processData(data) {
       negativeFinalGradesMetric: [],
     },
     absences: { dates: [], noReason: [], withReason: [], absencesTotal: [], lessons: [], metrics: [] },
+    outages: [],
   };
 
   data.grades.forEach(e => {
     processedData.grades.dates.push(e.date);
     processedData.grades.negativeGrades.push(e.negativeGrades);
     processedData.grades.positiveGrades.push(+e.fineGrades + +e.goodGrades + +e.greatGrades);
-
+    processedData.grades.acceptableGrades.push(e.acceptableGrades);
     processedData.grades.fineGrades.push(e.fineGrades);
     processedData.grades.goodGrades.push(e.goodGrades);
     processedData.grades.greatGrades.push(e.greatGrades);
@@ -310,7 +316,7 @@ function processData(data) {
     processedData.finalGrades.dates.push(e.date);
     processedData.finalGrades.negativeFinalGrades.push(e.negativeFinalGrades);
     processedData.finalGrades.positiveFinalGrades.push(+e.fineFinalGrades + +e.goodFinalGrades + +e.greatFinalGrades);
-
+    processedData.finalGrades.acceptableFinalGrades.push(e.acceptableFinalGrades);
     processedData.finalGrades.fineFinalGrades.push(e.fineFinalGrades);
     processedData.finalGrades.goodFinalGrades.push(e.goodFinalGrades);
     processedData.finalGrades.greatFinalGrades.push(e.greatFinalGrades);
@@ -332,8 +338,51 @@ function processData(data) {
     processedData.absences.metrics.push(e.metric);
   });
 
+  checkForOutages(processedData.grades.dates).forEach(outage => processedData.outages.push(outage));
+
   return processedData;
 };
+
+function checkForOutages(dates) {
+  if (!dates || dates.length === 0) return [];
+
+  const outages = [];
+
+  for (let i = 1; i < dates.length; i++) {
+    const prev = parseISO(dates[i - 1]);
+    const curr = parseISO(dates[i]);
+
+    const diffWeeks = (curr - prev) / (7 * 24 * 60 * 60 * 1000);
+
+    if (diffWeeks > 1) {
+      const missingWeeks = [];
+
+      for (let w = 1; w < diffWeeks; w++) {
+        const m = new Date(prev);
+        m.setDate(m.getDate() + 7 * w);
+
+        missingWeeks.push(formatISO(m));
+      }
+
+      outages.push({
+        start: formatISO(prev),
+        end: formatISO(curr),
+        missingWeeks
+      });
+    }
+  }
+
+  return outages;
+}
+
+function formatISO(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseISO(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return new Date(y, m - 1, d);
+}
 
 function graphData(data, graphType) {
   let datasetSimple = [
@@ -394,6 +443,15 @@ function graphData(data, graphType) {
       fill: true,
       stack: 'grades',
     },
+    {
+      label: 'arvestatud tulemused',
+      data: data.grades.acceptableGrades,
+      borderWidth: 2,
+      borderColor: '#0fb9b1',
+      backgroundColor: '#2bcbba',
+      fill: true,
+      stack: 'grades',
+    },
   ];
 
   let datasetFinalSimple = [
@@ -451,6 +509,15 @@ function graphData(data, graphType) {
       borderWidth: 2,
       borderColor: '#20bf6b',
       backgroundColor: '#26de81',
+      fill: true,
+      stack: 'grades',
+    },
+    {
+      label: 'arvestatud lõpptulemused',
+      data: data.finalGrades.acceptableFinalGrades,
+      borderWidth: 2,
+      borderColor: '#0fb9b1',
+      backgroundColor: '#2bcbba',
       fill: true,
       stack: 'grades',
     },
@@ -518,5 +585,27 @@ function graphData(data, graphType) {
     };
   }
 };
+
+function outagesToAnnotations(outages) {
+  const annotations = {};
+
+  outages.forEach((outage, index) => {
+    annotations[`outage_${index}`] = {
+      type: 'box',
+      xMin: outage.start,
+      xMax: outage.end,
+      backgroundColor: 'rgba(255, 99, 132, 0.25)',
+      borderColor: 'rgba(255, 99, 132, 0.8)',
+      borderWidth: 1,
+      label: {
+        display: true,
+        content: `${outage.missingWeeks.length}w`,
+        position: 'start'
+      }
+    };
+  });
+
+  return annotations;
+}
 
 // TODO: Refactor graphData to be cleaner

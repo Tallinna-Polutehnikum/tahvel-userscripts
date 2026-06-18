@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Täiendatud Tahvel Õpetajale
+// @name         Täiendatud Tahvel Õpetajale DEV
 // @namespace    https://tahvel.edu.ee/
 // @version      ${version}
 // @description  Tahvlile mõned UI täiendused, mis parandavad tundide sisestamist ja hindamist.
