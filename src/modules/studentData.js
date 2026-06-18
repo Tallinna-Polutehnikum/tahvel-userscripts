@@ -82,16 +82,8 @@ async function collectStudentData() {
   };
 };
 
-async function autoRunCollectStudentData() {
-  const now = new Date();
-  if (now.getDay() !== 1) return; // Only run on Mondays
-  // Has data collection ran this week.
-  await collectStudentData();
-};
-
 export {
   collectStudentData,
-  autoRunCollectStudentData
 };
 
 // Helper functions
