@@ -15,6 +15,8 @@ async function collectStudentData() {
   isCollectionInProgress = true;
 
   let groupsData;
+  let teachersData;
+  let teacherEmailMap = new Map();
 
   alert('Starting student data collection. This may take a while.');
 
@@ -31,6 +33,24 @@ async function collectStudentData() {
       alert(err.message);
     };
 
+    // Fetch all teachers
+    try {
+      teachersData = await getTeachers();
+      // Fetch all groups using totalElements from first fetch
+      teachersData = await getTeachers(teachersData.totalElements);
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    };
+
+    // Build a map of teacher names to their email addresses
+    teachersData.content.forEach(t => {
+      teacherEmailMap.set(
+        t.name,
+        t.email?.toLowerCase().replace('@tptlive.ee', '@techno.ee') ?? ''
+      );
+    });
+
     const emptyGroups = getEmptyGroups();
 
     // Go through each group, gather student data and POST to server
@@ -43,6 +63,7 @@ async function collectStudentData() {
       let groupResult = {
         groupId: groupId,
         groupCode: group.code,
+        teacherEmail: teacherEmailMap.get(group.teacher),
         students: [],
       }
 
@@ -214,6 +235,26 @@ function addEmptyGroups(groupId) {
 
 async function getStudentGroups(size = 0) {
   const url = (size) => `https://tahvel.edu.ee/hois_back/studentgroups?isValid=false&lang=ET&page=0&size=${size}&sort=CODE`;
+
+  const response = await fetch(url(size));
+
+  if (!response.ok) {
+    if (response.status === 400) {
+      throw new Error("Bad Request: please check your credentials.");
+    } else {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+  }
+
+  try {
+    return await response.json();
+  } catch (err) {
+    throw new Error(`Failed to parse JSON: ${err.message}`);
+  }
+};
+
+async function getTeachers(size = 0) {
+  const url = (size) => `https://tahvel.edu.ee/hois_back/teachers?isActive=true&lang=ET&page=0&size=${size}&sort=p.lastname,p.firstname,asc`;
 
   const response = await fetch(url(size));
 
